@@ -119,6 +119,16 @@ const macroFor = (entry: Entry, field: "protein" | "carbs" | "fat") => {
 const normalizeText = (value: string) => value.trim().toLowerCase();
 const isLocalhost = (hostname: string) => hostname === "localhost" || hostname === "127.0.0.1";
 
+const waitForVideoElement = async (getElement: () => HTMLVideoElement | null) => {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const element = getElement();
+    if (element) return element;
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+  }
+
+  return null;
+};
+
 const getUnitOptions = (product: Product): UnitOption[] => {
   const text = `${product.name} ${product.brand ?? ""} ${product.category}`.toLowerCase();
 
@@ -428,60 +438,36 @@ export function CalorieApp() {
       return;
     }
 
-    const detectorCtor = (window as unknown as {
-      BarcodeDetector?: new (options?: { formats?: string[] }) => {
-        detect: (source: HTMLVideoElement) => Promise<Array<{ rawValue: string }>>;
-      };
-    }).BarcodeDetector;
+    stopScanner();
+    setScanning(true);
+    setCameraStatus("פותח מצלמה...");
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-      setScanning(true);
-      setCameraStatus("כוון את המצלמה לברקוד.");
+      const videoElement = await waitForVideoElement(() => videoRef.current);
 
-      if (!detectorCtor) {
-        if (!videoRef.current) {
-          setCameraStatus("לא הצלחנו לפתוח את חלון המצלמה. אפשר להקליד את הברקוד ידנית.");
-          stopScanner();
-          return;
-        }
-        const reader = new BrowserMultiFormatReader();
-        const controls = await reader.decodeFromVideoElement(videoRef.current, (result) => {
+      if (!videoElement) {
+        setCameraStatus("לא הצלחנו לפתוח את חלון המצלמה. אפשר להקליד את הברקוד ידנית.");
+        setScanning(false);
+        return;
+      }
+
+      const reader = new BrowserMultiFormatReader();
+      const controls = await reader.decodeFromConstraints(
+        { video: { facingMode: { ideal: "environment" } } },
+        videoElement,
+        (result) => {
           const value = result?.getText();
           if (!value) return;
           stopScanner();
           setBarcode(value);
           void lookupBarcode(value);
-        });
-        scannerControlsRef.current = controls;
-        return;
-      }
+        },
+      );
 
-      const detector = new detectorCtor({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] });
-
-      const scan = async () => {
-        if (!videoRef.current || !streamRef.current) return;
-        const codes = await detector.detect(videoRef.current);
-        if (codes[0]?.rawValue) {
-          const value = codes[0].rawValue;
-          stopScanner();
-          setBarcode(value);
-          void lookupBarcode(value);
-          return;
-        }
-        window.setTimeout(scan, 500);
-      };
-
-      window.setTimeout(scan, 700);
+      scannerControlsRef.current = controls;
+      setCameraStatus("כוון את המצלמה לברקוד.");
     } catch {
-      setCameraStatus("לא קיבלנו גישה למצלמה. באייפון דרך רשת מקומית צריך HTTPS; בינתיים אפשר להקליד את הברקוד ידנית.");
+      setCameraStatus("לא קיבלנו גישה למצלמה. ודא שהאתר פתוח ב-HTTPS ושאישרת הרשאת מצלמה בספארי.");
       stopScanner();
     }
   };
