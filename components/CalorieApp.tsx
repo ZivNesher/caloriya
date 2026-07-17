@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BrowserMultiFormatReader } from "@zxing/browser";
+import { BarcodeFormat, BrowserMultiFormatOneDReader, type IScannerControls } from "@zxing/browser";
+import { DecodeHintType } from "@zxing/library";
 import { products, type Product } from "@/data/products";
 
 type MealKey = "breakfast" | "lunch" | "dinner" | "night" | "snacks";
@@ -128,6 +129,30 @@ const waitForVideoElement = async (getElement: () => HTMLVideoElement | null) =>
 
   return null;
 };
+
+const backCameraConstraints: MediaTrackConstraints = {
+  facingMode: { ideal: "environment" },
+  width: { ideal: 1920 },
+  height: { ideal: 1080 },
+  frameRate: { ideal: 30 },
+};
+
+const scannerHints = new Map<DecodeHintType, unknown>([
+  [DecodeHintType.TRY_HARDER, true],
+  [
+    DecodeHintType.POSSIBLE_FORMATS,
+    [
+      BarcodeFormat.EAN_13,
+      BarcodeFormat.EAN_8,
+      BarcodeFormat.UPC_A,
+      BarcodeFormat.UPC_E,
+      BarcodeFormat.CODE_128,
+      BarcodeFormat.CODE_39,
+      BarcodeFormat.ITF,
+    ],
+  ],
+]);
+
 
 const getUnitOptions = (product: Product): UnitOption[] => {
   const text = `${product.name} ${product.brand ?? ""} ${product.category}`.toLowerCase();
@@ -268,13 +293,15 @@ export function CalorieApp() {
   const [barcodeStatus, setBarcodeStatus] = useState("");
   const [cameraStatus, setCameraStatus] = useState("");
   const [scanning, setScanning] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
+  const [torchAvailable, setTorchAvailable] = useState(false);
   const [lastScannedProduct, setLastScannedProduct] = useState<Product | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [choosingMeal, setChoosingMeal] = useState(false);
   const [notice, setNotice] = useState("");
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const scannerControlsRef = useRef<{ stop: () => void } | null>(null);
+  const scannerControlsRef = useRef<IScannerControls | null>(null);
 
   const day = logs[selectedDate] ?? emptyDay();
   const weeks = useMemo(() => weekKeys(selectedDate), [selectedDate]);
@@ -430,6 +457,45 @@ export function CalorieApp() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     setScanning(false);
+    setTorchOn(false);
+    setTorchAvailable(false);
+  };
+
+  const improveCameraFocus = () => {
+    const controls = scannerControlsRef.current;
+
+    try {
+      controls?.streamVideoConstraintsApply?.(
+        {
+          advanced: [
+            {
+              focusMode: "continuous",
+              exposureMode: "continuous",
+              whiteBalanceMode: "continuous",
+              zoom: 2,
+            } as MediaTrackConstraintSet,
+          ],
+        },
+      );
+      setCameraStatus("כוון את הברקוד בתוך המסגרת, במרחק 10-20 ס״מ, והחזק יציב.");
+    } catch {
+      setCameraStatus("הדפדפן לא נתן שליטה בפוקוס. נסה להרחיק/לקרב מעט ולהחזיק יציב.");
+    }
+  };
+
+  const toggleTorch = async () => {
+    const controls = scannerControlsRef.current;
+    if (!controls?.switchTorch) {
+      setCameraStatus("פנס לא נתמך בדפדפן הזה. נסה תאורה חזקה יותר סביב הברקוד.");
+      return;
+    }
+
+    try {
+      await controls.switchTorch(!torchOn);
+      setTorchOn((value) => !value);
+    } catch {
+      setCameraStatus("לא הצלחנו להפעיל פנס דרך הדפדפן. נסה להאיר את הברקוד מבחוץ.");
+    }
   };
 
   const startScanner = async () => {
@@ -451,9 +517,13 @@ export function CalorieApp() {
         return;
       }
 
-      const reader = new BrowserMultiFormatReader();
+      const reader = new BrowserMultiFormatOneDReader(scannerHints, {
+        delayBetweenScanAttempts: 80,
+        delayBetweenScanSuccess: 400,
+        tryPlayVideoTimeout: 5000,
+      });
       const controls = await reader.decodeFromConstraints(
-        { video: { facingMode: { ideal: "environment" } } },
+        { video: backCameraConstraints },
         videoElement,
         (result) => {
           const value = result?.getText();
@@ -465,6 +535,8 @@ export function CalorieApp() {
       );
 
       scannerControlsRef.current = controls;
+      setTorchAvailable(Boolean(controls.switchTorch));
+      window.setTimeout(improveCameraFocus, 450);
       setCameraStatus("כוון את המצלמה לברקוד.");
     } catch {
       setCameraStatus("לא קיבלנו גישה למצלמה. ודא שהאתר פתוח ב-HTTPS ושאישרת הרשאת מצלמה בספארי.");
@@ -623,7 +695,22 @@ export function CalorieApp() {
                 {scanning ? "עצור מצלמה" : "סרוק"}
               </button>
             </div>
-            {scanning ? <video ref={videoRef} className="scanner" muted playsInline /> : null}
+            {scanning ? (
+              <div className="scanner-frame">
+                <video ref={videoRef} className="scanner" muted playsInline autoPlay />
+                <div className="scanner-guide" aria-hidden="true">
+                  <span />
+                </div>
+                <div className="scanner-tools">
+                  <button type="button" onClick={improveCameraFocus}>
+                    שפר פוקוס
+                  </button>
+                  <button type="button" onClick={() => void toggleTorch()} disabled={!torchAvailable}>
+                    {torchOn ? "כבה פנס" : "פנס"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <p>{barcodeStatus || cameraStatus || "סריקת ברקוד תחפש את המוצר, ואז תוכל לבחור כמות וארוחה."}</p>
             {lastScannedProduct?.image ? (
               <img className="product-image" src={lastScannedProduct.image} alt={lastScannedProduct.name} />

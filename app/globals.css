@@ -374,13 +374,63 @@ button { cursor: pointer; }
   font-size: 0.92rem;
 }
 
-.scanner {
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  object-fit: cover;
+.scanner-frame {
+  position: relative;
+  overflow: hidden;
   margin-top: 10px;
   border-radius: 8px;
   background: #111;
+}
+
+.scanner {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  display: block;
+  background: #111;
+}
+
+.scanner-guide {
+  position: absolute;
+  inset: 18% 8%;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  border-radius: 8px;
+  box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+
+.scanner-guide span {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  background: rgba(233, 101, 75, 0.95);
+  box-shadow: 0 0 12px rgba(233, 101, 75, 0.45);
+}
+
+.scanner-tools {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.scanner-tools button {
+  min-height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.scanner-tools button:disabled {
+  opacity: 0.55;
 }
 
 .product-image {
@@ -863,9 +913,8 @@ button { cursor: pointer; }
     font-size: 0.84rem;
   }
 
-  .scanner {
-    aspect-ratio: 4 / 3;
-  }
+  .scanner { aspect-ratio: 3 / 4; }
+  .scanner-guide { inset: 22% 7%; }
 
   .product-grid {
     max-height: none;
