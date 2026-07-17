@@ -154,27 +154,76 @@ const formatAmountLabel = (value: number, unit: UnitOption, grams: number) => {
 function useStoredLogs() {
   const [logs, setLogs] = useState<Logs>({});
   const [loaded, setLoaded] = useState(false);
+  const [storageStatus, setStorageStatus] = useState("טוען נתונים...");
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem("calor-logs-v1");
-      if (raw) {
-        setLogs(JSON.parse(raw) as Logs);
+    let cancelled = false;
+
+    const loadLogs = async () => {
+      let localLogs: Logs = {};
+
+      try {
+        const raw = window.localStorage.getItem("calor-logs-v1");
+        if (raw) {
+          localLogs = JSON.parse(raw) as Logs;
+        }
+      } catch {
+        localLogs = {};
       }
-    } catch {
-      setLogs({});
-    } finally {
-      setLoaded(true);
-    }
+
+      try {
+        const response = await fetch("/api/logs", { cache: "no-store" });
+        if (!response.ok) throw new Error("Failed to load logs");
+        const payload = (await response.json()) as { logs?: Logs };
+        const serverLogs = payload.logs ?? {};
+        const mergedLogs = { ...localLogs, ...serverLogs };
+
+        if (cancelled) return;
+        setLogs(mergedLogs);
+        setStorageStatus("נשמר בענן Railway");
+
+        if (Object.keys(localLogs).length && Object.keys(serverLogs).length === 0) {
+          await fetch("/api/logs", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ logs: mergedLogs }),
+          });
+        }
+      } catch {
+        if (cancelled) return;
+        setLogs(localLogs);
+        setStorageStatus("שמירה מקומית בלבד כרגע");
+      } finally {
+        if (!cancelled) setLoaded(true);
+      }
+    };
+
+    void loadLogs();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
-    if (loaded) {
+    if (!loaded) return;
+
+    const timeout = window.setTimeout(() => {
       window.localStorage.setItem("calor-logs-v1", JSON.stringify(logs));
-    }
+      void fetch("/api/logs", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logs }),
+      })
+        .then((response) => {
+          setStorageStatus(response.ok ? "נשמר בענן Railway" : "שמירה מקומית בלבד כרגע");
+        })
+        .catch(() => setStorageStatus("שמירה מקומית בלבד כרגע"));
+    }, 350);
+
+    return () => window.clearTimeout(timeout);
   }, [loaded, logs]);
 
-  return [logs, setLogs] as const;
+  return [logs, setLogs, storageStatus] as const;
 }
 
 function totalCalories(day: DayLog) {
@@ -196,7 +245,7 @@ function weekKeys(selectedDate: string) {
 }
 
 export function CalorieApp() {
-  const [logs, setLogs] = useStoredLogs();
+  const [logs, setLogs, storageStatus] = useStoredLogs();
   const [selectedDate, setSelectedDate] = useState(() => toDateKey(new Date()));
   const [query, setQuery] = useState("");
   const [selectedMeal, setSelectedMeal] = useState<MealKey>("breakfast");
@@ -453,6 +502,7 @@ export function CalorieApp() {
           <p className="eyebrow">קלורית</p>
           <h1>יומן קלוריות ישראלי</h1>
           <p className="subline">{formatHebrewDate(selectedDate)} · {entryCount} פריטים נרשמו</p>
+          <p className="storage-status">{storageStatus}</p>
         </div>
         <div className="today-card">
           <span>סה"כ היום</span>
