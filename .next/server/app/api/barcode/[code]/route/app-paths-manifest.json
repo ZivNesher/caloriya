@@ -1,0 +1,3 @@
+{
+  "/api/barcode/[code]/route": "app/api/barcode/[code]/route.js"
+}
