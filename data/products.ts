@@ -1280,6 +1280,41 @@ const mullerYotvataProducts: Product[] = mullerYotvataCatalog.flatMap((family, f
   })),
 );
 
+const basicCheeseProducts: Product[] = [
+  { id: "emek-yellow-classic-slices-28", name: "גבינה צהובה עמק קלאסית פרוסות 28%", brand: "עמק", category: "מוצרי חלב", serving: "פרוסה 25 גרם", caloriesPer100g: 350, protein: 25, carbs: 1, fat: 28 },
+  { id: "emek-yellow-light-slices-15", name: "גבינה צהובה עמק לייט פרוסות 15%", brand: "עמק", category: "מוצרי חלב", serving: "פרוסה 25 גרם", caloriesPer100g: 260, protein: 29, carbs: 1, fat: 15 },
+  { id: "emek-yellow-light-slices-9", name: "גבינה צהובה עמק 9% פרוסות", brand: "עמק", category: "מוצרי חלב", serving: "פרוסה 25 גרם", caloriesPer100g: 210, protein: 28, carbs: 1, fat: 9 },
+  { id: "emek-yellow-shredded-28", name: "גבינה צהובה עמק מגורדת 28%", brand: "עמק", category: "מוצרי חלב", serving: "30 גרם", caloriesPer100g: 350, protein: 25, carbs: 1, fat: 28 },
+  { id: "emek-yellow-shredded-light", name: "גבינה צהובה עמק מגורדת לייט", brand: "עמק", category: "מוצרי חלב", serving: "30 גרם", caloriesPer100g: 260, protein: 29, carbs: 1, fat: 15 },
+  { id: "emek-bites-yellow", name: "עמק ביס גבינה צהובה", brand: "עמק", category: "מוצרי חלב", serving: "יחידה", caloriesPer100g: 345, protein: 25, carbs: 1, fat: 27 },
+  { id: "tnuva-white-cheese-5-creamy", name: "גבינה לבנה 5% במרקם שמנת", brand: "תנובה", category: "מוצרי חלב", serving: "100 גרם", caloriesPer100g: 105, protein: 9, carbs: 4, fat: 5 },
+  { id: "tnuva-white-cheese-3-creamy", name: "גבינה לבנה 3% במרקם שמנת", brand: "תנובה", category: "מוצרי חלב", serving: "100 גרם", caloriesPer100g: 82, protein: 9, carbs: 4, fat: 3 },
+  { id: "tnuva-white-cheese-5-tub", name: "גבינה לבנה תנובה 5%", brand: "תנובה", category: "מוצרי חלב", serving: "100 גרם", caloriesPer100g: 95, protein: 9, carbs: 4, fat: 5 },
+  { id: "tnuva-white-cheese-9", name: "גבינה לבנה תנובה 9%", brand: "תנובה", category: "מוצרי חלב", serving: "100 גרם", caloriesPer100g: 135, protein: 9, carbs: 4, fat: 9 },
+  { id: "tara-white-cheese-creamy-5", name: "גבינה לבנה טרה 5% במרקם שמנת", brand: "טרה", category: "מוצרי חלב", serving: "100 גרם", caloriesPer100g: 103, protein: 9, carbs: 4, fat: 5 },
+  { id: "strauss-white-cheese-creamy-5", name: "גבינה לבנה שטראוס 5% במרקם שמנת", brand: "שטראוס", category: "מוצרי חלב", serving: "100 גרם", caloriesPer100g: 103, protein: 9, carbs: 4, fat: 5 },
+  { id: "napoleon-cream-cheese-5", name: "נפוליאון גבינת שמנת 5%", brand: "תנובה", category: "מוצרי חלב", serving: "כף 25 גרם", caloriesPer100g: 132, protein: 8, carbs: 5, fat: 8 },
+  { id: "napoleon-cream-cheese-16", name: "נפוליאון גבינת שמנת 16%", brand: "תנובה", category: "מוצרי חלב", serving: "כף 25 גרם", caloriesPer100g: 215, protein: 7, carbs: 4, fat: 16 },
+  { id: "napoleon-cream-cheese-25", name: "נפוליאון גבינת שמנת 25%", brand: "תנובה", category: "מוצרי חלב", serving: "כף 25 גרם", caloriesPer100g: 265, protein: 6, carbs: 4, fat: 25 },
+  { id: "symphony-cream-cheese-5", name: "סימפוניה גבינת שמנת 5%", brand: "שטראוס", category: "מוצרי חלב", serving: "כף 25 גרם", caloriesPer100g: 126, protein: 8, carbs: 5, fat: 7 },
+  { id: "symphony-cream-cheese-garlic-5", name: "סימפוניה גבינת שמנת שום שמיר 5%", brand: "שטראוס", category: "מוצרי חלב", serving: "כף 25 גרם", caloriesPer100g: 128, protein: 8, carbs: 5, fat: 7 },
+  { id: "symphony-cream-cheese-olive-5", name: "סימפוניה גבינת שמנת זיתים 5%", brand: "שטראוס", category: "מוצרי חלב", serving: "כף 25 גרם", caloriesPer100g: 130, protein: 8, carbs: 5, fat: 7 },
+  { id: "gad-cream-cheese-5", name: "גד גבינת שמנת 5%", brand: "גד", category: "מוצרי חלב", serving: "כף 25 גרם", caloriesPer100g: 130, protein: 8, carbs: 5, fat: 8 },
+  { id: "gad-cream-cheese-16", name: "גד גבינת שמנת 16%", brand: "גד", category: "מוצרי חלב", serving: "כף 25 גרם", caloriesPer100g: 215, protein: 7, carbs: 4, fat: 16 },
+  { id: "noam-yellow-slices", name: "גבינה צהובה נעם פרוסות", brand: "טרה", category: "מוצרי חלב", serving: "פרוסה 25 גרם", caloriesPer100g: 345, protein: 25, carbs: 1, fat: 27 },
+  { id: "noam-yellow-light-slices", name: "גבינה צהובה נעם לייט פרוסות", brand: "טרה", category: "מוצרי חלב", serving: "פרוסה 25 גרם", caloriesPer100g: 255, protein: 29, carbs: 1, fat: 15 },
+  { id: "gilboa-yellow-slices", name: "גבינה צהובה גלבוע פרוסות", brand: "תנובה", category: "מוצרי חלב", serving: "פרוסה 25 גרם", caloriesPer100g: 330, protein: 25, carbs: 1, fat: 26 },
+  { id: "gauda-slices", name: "גבינת גאודה פרוסות", category: "מוצרי חלב", serving: "פרוסה 25 גרם", caloriesPer100g: 356, protein: 25, carbs: 2, fat: 27 },
+  { id: "mozzarella-shredded", name: "מוצרלה מגורדת", category: "מוצרי חלב", serving: "30 גרם", caloriesPer100g: 280, protein: 22, carbs: 3, fat: 20 },
+  { id: "mozzarella-light-shredded", name: "מוצרלה מגורדת לייט", category: "מוצרי חלב", serving: "30 גרם", caloriesPer100g: 220, protein: 25, carbs: 3, fat: 12 },
+  { id: "feta-5-tnuva", name: "גבינה בולגרית 5%", brand: "תנובה", category: "מוצרי חלב", serving: "100 גרם", caloriesPer100g: 125, protein: 16, carbs: 2, fat: 5 },
+  { id: "feta-5-gad", name: "גבינה בולגרית 5%", brand: "גד", category: "מוצרי חלב", serving: "100 גרם", caloriesPer100g: 125, protein: 16, carbs: 2, fat: 5 },
+  { id: "tzfatit-5-tnuva", name: "גבינה צפתית 5%", brand: "תנובה", category: "מוצרי חלב", serving: "100 גרם", caloriesPer100g: 130, protein: 17, carbs: 1, fat: 5 },
+  { id: "tzfatit-5-gad", name: "גבינה צפתית 5%", brand: "גד", category: "מוצרי חלב", serving: "100 גרם", caloriesPer100g: 130, protein: 17, carbs: 1, fat: 5 },
+  { id: "cottage-creamy-5", name: "קוטג' 5% במרקם שמנת", brand: "תנובה", category: "מוצרי חלב", serving: "100 גרם", caloriesPer100g: 105, protein: 11, carbs: 3, fat: 5 },
+  { id: "cottage-low-fat-3", name: "קוטג' 3%", brand: "תנובה", category: "מוצרי חלב", serving: "100 גרם", caloriesPer100g: 82, protein: 11, carbs: 3, fat: 3 },
+];
+
 export const products: Product[] = [
   ...staples,
   ...moreNames.map(([name, category, caloriesPer100g, protein, carbs, fat], index) => ({
@@ -1329,6 +1364,7 @@ export const products: Product[] = [
   ...proAndSnackProducts,
   ...supermarketFocusedProducts,
   ...mullerYotvataProducts,
+  ...basicCheeseProducts,
 ].sort((a, b) => a.name.localeCompare(b.name, "he"));
 
 export const categories = Array.from(new Set(products.map((product) => product.category))).sort(

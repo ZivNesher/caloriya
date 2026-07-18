@@ -125,7 +125,87 @@ const macroFor = (entry: Entry, field: "protein" | "carbs" | "fat") => {
   return typeof value === "number" ? (value * entry.grams) / 100 : 0;
 };
 
-const normalizeText = (value: string) => value.trim().toLowerCase();
+const finalLetterMap: Record<string, string> = {
+  ך: "כ",
+  ם: "מ",
+  ן: "נ",
+  ף: "פ",
+  ץ: "צ",
+};
+
+const normalizeText = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0591-\u05C7]/g, "")
+    .replace(/[ךםןףץ]/g, (letter) => finalLetterMap[letter] ?? letter)
+    .replace(/[״"׳'`´’‘]/g, "")
+    .replace(/[^0-9a-z\u0590-\u05ff%]+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const tokenizeSearch = (value: string) => normalizeText(value).split(" ").filter(Boolean);
+
+const editDistance = (a: string, b: string) => {
+  if (Math.abs(a.length - b.length) > 2) return 3;
+
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 0; i < a.length; i += 1) {
+    const current = [i + 1];
+    for (let j = 0; j < b.length; j += 1) {
+      current[j + 1] = a[i] === b[j]
+        ? previous[j]
+        : Math.min(previous[j], current[j], previous[j + 1]) + 1;
+    }
+    previous = current;
+  }
+
+  return previous[b.length];
+};
+
+const scoreSearchToken = (queryToken: string, productTokens: string[]) => {
+  let best = 0;
+
+  for (const token of productTokens) {
+    if (token === queryToken) best = Math.max(best, 80);
+    else if (token.startsWith(queryToken)) best = Math.max(best, 62);
+    else if (queryToken.startsWith(token) && token.length >= 3) best = Math.max(best, 52);
+    else if (token.includes(queryToken) && queryToken.length >= 3) best = Math.max(best, 42);
+    else if (queryToken.length >= 3 && editDistance(queryToken, token) <= 1) best = Math.max(best, 34);
+    else if (queryToken.length >= 5 && editDistance(queryToken, token) <= 2) best = Math.max(best, 24);
+  }
+
+  return best;
+};
+
+const scoreProductSearch = (product: Product, queryValue: string) => {
+  const cleanQuery = normalizeText(queryValue);
+  if (cleanQuery.length < 2) return 0;
+
+  const text = normalizeText(`${product.name} ${product.brand ?? ""} ${product.category}`);
+  const productTokens = text.split(" ").filter(Boolean);
+  const queryTokens = tokenizeSearch(queryValue);
+  if (!queryTokens.length) return 0;
+
+  let score = text.includes(cleanQuery) ? 90 : 0;
+  let matchedTokens = 0;
+
+  for (const queryToken of queryTokens) {
+    const tokenScore = scoreSearchToken(queryToken, productTokens);
+    if (tokenScore > 0) matchedTokens += 1;
+    score += tokenScore;
+  }
+
+  if (matchedTokens === 0) return 0;
+  if (queryTokens.length > 1 && matchedTokens / queryTokens.length < 0.6) return 0;
+  if (normalizeText(product.name).includes(cleanQuery)) score += 35;
+  if (normalizeText(product.brand ?? "").includes(cleanQuery)) score += 18;
+
+  return score;
+};
+
+const parseUserNumber = (value: string) => Number(value.trim().replace(",", "."));
 const isLocalhost = (hostname: string) => hostname === "localhost" || hostname === "127.0.0.1";
 
 const waitForVideoElement = async (getElement: () => HTMLVideoElement | null) => {
@@ -421,7 +501,7 @@ export function CalorieApp() {
   const [selectedUnitId, setSelectedUnitId] = useState("g");
   const [manualOpen, setManualOpen] = useState(false);
   const [manualName, setManualName] = useState("");
-  const [manualCalories, setManualCalories] = useState(150);
+  const [manualCalories, setManualCalories] = useState("150");
   const [barcode, setBarcode] = useState("");
   const [barcodeStatus, setBarcodeStatus] = useState("");
   const [cameraStatus, setCameraStatus] = useState("");
@@ -452,18 +532,17 @@ export function CalorieApp() {
   const weeklyGoal = goal * 7;
   const unitOptions = selectedProduct ? getUnitOptions(selectedProduct) : gramUnits;
   const selectedUnit = unitOptions.find((unit) => unit.id === selectedUnitId) ?? unitOptions[0];
-  const selectedGrams = Math.max(1, amountValue * selectedUnit.gramsPerUnit);
+  const safeAmountValue = Number.isFinite(amountValue) ? amountValue : selectedUnit.defaultValue;
+  const selectedGrams = Math.max(1, safeAmountValue * selectedUnit.gramsPerUnit);
 
   const filteredProducts = useMemo(() => {
-    const cleanQuery = normalizeText(query);
-    if (cleanQuery.length < 2) return [];
+    if (normalizeText(query).length < 2) return [];
     return products
-      .filter((product) => {
-        return normalizeText(
-          `${product.name} ${product.brand ?? ""} ${product.category}`,
-        ).includes(cleanQuery);
-      })
-      .slice(0, 12);
+      .map((product) => ({ product, score: scoreProductSearch(product, query) }))
+      .filter((result) => result.score > 0)
+      .sort((a, b) => b.score - a.score || a.product.name.localeCompare(b.product.name, "he"))
+      .map((result) => result.product)
+      .slice(0, 18);
   }, [query]);
 
   const recentProducts = useMemo(() => {
@@ -531,20 +610,33 @@ export function CalorieApp() {
   };
 
   const addManual = () => {
-    if (!manualName.trim()) return;
+    const cleanName = manualName.trim() || query.trim();
+    const calories = parseUserNumber(manualCalories);
+
+    if (!cleanName) {
+      setNotice("צריך למלא שם מוצר ידני.");
+      return;
+    }
+
+    if (!Number.isFinite(calories) || calories < 0 || calories > 1000) {
+      setNotice("צריך למלא קלוריות תקינות ל-100 גרם.");
+      return;
+    }
+
     selectProduct({
       id: `manual-${Date.now()}`,
-      name: manualName.trim(),
+      name: cleanName,
       category: "ידני",
       serving: "100 גרם",
-      caloriesPer100g: Number(manualCalories) || 0,
+      caloriesPer100g: calories,
       protein: null,
       carbs: null,
       fat: null,
     });
     setManualName("");
-    setManualCalories(150);
+    setManualCalories("150");
     setManualOpen(false);
+    setNotice("המוצר הידני נוצר. עכשיו בחר כמות ואז ארוחה.");
   };
 
   const requestMealChoice = () => {
@@ -557,7 +649,7 @@ export function CalorieApp() {
 
   const addSelectedToMeal = (meal: MealKey) => {
     if (!selectedProduct) return;
-    addProduct(selectedProduct, selectedGrams, meal, formatAmountLabel(amountValue, selectedUnit, selectedGrams));
+    addProduct(selectedProduct, selectedGrams, meal, formatAmountLabel(safeAmountValue, selectedUnit, selectedGrams));
     setSelectedProduct(null);
     setChoosingMeal(false);
     setQuery("");
@@ -1086,9 +1178,9 @@ export function CalorieApp() {
                     type="number"
                     min="0.1"
                     step="0.1"
-                    value={amountValue}
-                    onChange={(event) => setAmountValue(Number(event.target.value))}
-                    onInput={(event) => setAmountValue(Number(event.currentTarget.value))}
+                    value={Number.isFinite(amountValue) ? amountValue : ""}
+                    onChange={(event) => setAmountValue(parseUserNumber(event.target.value))}
+                    onInput={(event) => setAmountValue(parseUserNumber(event.currentTarget.value))}
                   />
                 </label>
                 <label className="amount-field">
@@ -1110,7 +1202,7 @@ export function CalorieApp() {
                 </label>
               </div>
               <p className="amount-summary">
-                מחושב לפי {formatAmountLabel(amountValue || 0, selectedUnit, selectedGrams)}
+                מחושב לפי {formatAmountLabel(safeAmountValue, selectedUnit, selectedGrams)}
               </p>
               <div className="quick-amounts" aria-label="בחירת כמות מהירה">
                 {selectedUnit.quickValues.map((amount) => (
@@ -1175,28 +1267,42 @@ export function CalorieApp() {
           ) : null}
 
           <div className="manual-box">
-            <button type="button" className="ghost" onClick={() => setManualOpen((value) => !value)}>
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => {
+                setManualOpen((value) => !value);
+                if (!manualName.trim() && query.trim()) setManualName(query.trim());
+              }}
+            >
               {manualOpen ? "סגור הזנה ידנית" : "הוסף מוצר ידני"}
             </button>
             {manualOpen ? (
               <div className="manual-fields">
-                <input
-                  placeholder="שם המאכל"
-                  value={manualName}
-                  onChange={(event) => setManualName(event.target.value)}
-                  onInput={(event) => setManualName(event.currentTarget.value)}
-                />
-                <input
-                  type="number"
-                  min="0"
-                  value={manualCalories}
-                  onChange={(event) => setManualCalories(Number(event.target.value))}
-                  onInput={(event) => setManualCalories(Number(event.currentTarget.value))}
-                  aria-label="קלוריות ל-100 גרם"
-                />
+                <label>
+                  שם מוצר
+                  <input
+                    placeholder="לדוגמה: גבינה ביתית"
+                    value={manualName}
+                    onChange={(event) => setManualName(event.target.value)}
+                    onInput={(event) => setManualName(event.currentTarget.value)}
+                  />
+                </label>
+                <label>
+                  קק"ל ל-100 גרם
+                  <input
+                    inputMode="decimal"
+                    min="0"
+                    placeholder="לדוגמה: 95"
+                    value={manualCalories}
+                    onChange={(event) => setManualCalories(event.target.value)}
+                    onInput={(event) => setManualCalories(event.currentTarget.value)}
+                  />
+                </label>
                 <button type="button" className="primary" onClick={addManual}>
-                  בחר
+                  צור ובחר כמות
                 </button>
+                <p>את הערך הקלורי לוקחים בדרך כלל מהתווית: "קלוריות ל-100 גרם" או "אנרגיה ל-100 גרם".</p>
               </div>
             ) : null}
           </div>
