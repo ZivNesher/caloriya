@@ -1315,6 +1315,79 @@ const basicCheeseProducts: Product[] = [
   { id: "cottage-low-fat-3", name: "קוטג' 3%", brand: "תנובה", category: "מוצרי חלב", serving: "100 גרם", caloriesPer100g: 82, protein: 11, carbs: 3, fat: 3 },
 ];
 
+const grillMeatProducts: Product[] = [
+  { id: "grill-entrecote-steak", name: "סטייק אנטריקוט על האש", category: "דגים ובשר", serving: "סטייק 250 גרם", caloriesPer100g: 290, protein: 24, carbs: 0, fat: 22 },
+  { id: "grill-sirloin-steak", name: "סטייק סינטה על האש", category: "דגים ובשר", serving: "סטייק 250 גרם", caloriesPer100g: 210, protein: 27, carbs: 0, fat: 11 },
+  { id: "grill-fillet-steak", name: "פילה בקר על האש", category: "דגים ובשר", serving: "סטייק 220 גרם", caloriesPer100g: 190, protein: 28, carbs: 0, fat: 8 },
+  { id: "grill-ribeye-steak", name: "סטייק ריב איי", category: "דגים ובשר", serving: "סטייק 300 גרם", caloriesPer100g: 291, protein: 24, carbs: 0, fat: 22 },
+  { id: "grill-tbone-steak", name: "סטייק טי בון", category: "דגים ובשר", serving: "סטייק 350 גרם", caloriesPer100g: 250, protein: 25, carbs: 0, fat: 17 },
+  { id: "grill-butcher-cut", name: "נתח קצבים על האש", category: "דגים ובשר", serving: "200 גרם", caloriesPer100g: 220, protein: 27, carbs: 0, fat: 12 },
+  { id: "grill-asado", name: "אסאדו על האש", category: "דגים ובשר", serving: "250 גרם", caloriesPer100g: 330, protein: 20, carbs: 0, fat: 28 },
+  { id: "grill-lamb-chops", name: "צלעות טלה על האש", category: "דגים ובשר", serving: "2 צלעות 180 גרם", caloriesPer100g: 294, protein: 25, carbs: 0, fat: 21 },
+  { id: "grill-picanha", name: "פיקניה על האש", category: "דגים ובשר", serving: "200 גרם", caloriesPer100g: 280, protein: 25, carbs: 0, fat: 20 },
+  { id: "grill-kebab-beef", name: "קבב בקר על האש", category: "דגים ובשר", serving: "יחידה 80 גרם", caloriesPer100g: 285, protein: 17, carbs: 4, fat: 22 },
+  { id: "grill-kebab-lamb", name: "קבב טלה על האש", category: "דגים ובשר", serving: "יחידה 80 גרם", caloriesPer100g: 310, protein: 16, carbs: 4, fat: 25 },
+  { id: "grill-kebab-chicken", name: "קבב עוף על האש", category: "דגים ובשר", serving: "יחידה 80 גרם", caloriesPer100g: 210, protein: 18, carbs: 5, fat: 13 },
+  { id: "grill-burger-160", name: "המבורגר בקר על האש", category: "דגים ובשר", serving: "קציצה 160 גרם", caloriesPer100g: 254, protein: 17, carbs: 4, fat: 20 },
+  { id: "grill-chicken-skewer", name: "שיפוד חזה עוף על האש", category: "דגים ובשר", serving: "שיפוד 120 גרם", caloriesPer100g: 165, protein: 31, carbs: 0, fat: 4 },
+  { id: "grill-pargit-skewer", name: "שיפוד פרגית על האש", category: "דגים ובשר", serving: "שיפוד 120 גרם", caloriesPer100g: 210, protein: 25, carbs: 0, fat: 12 },
+  { id: "grill-beef-skewer", name: "שיפוד בקר על האש", category: "דגים ובשר", serving: "שיפוד 120 גרם", caloriesPer100g: 230, protein: 26, carbs: 0, fat: 14 },
+  { id: "grill-lamb-skewer", name: "שיפוד כבש על האש", category: "דגים ובשר", serving: "שיפוד 120 גרם", caloriesPer100g: 280, protein: 24, carbs: 0, fat: 21 },
+  { id: "grill-turkey-skewer", name: "שיפוד הודו על האש", category: "דגים ובשר", serving: "שיפוד 120 גרם", caloriesPer100g: 150, protein: 29, carbs: 0, fat: 3 },
+  { id: "grill-wings", name: "כנפיים על האש", category: "דגים ובשר", serving: "4 יחידות 180 גרם", caloriesPer100g: 250, protein: 23, carbs: 0, fat: 17 },
+  { id: "grill-drumsticks", name: "שוקיים עוף על האש", category: "דגים ובשר", serving: "יחידה 100 גרם", caloriesPer100g: 190, protein: 24, carbs: 0, fat: 10 },
+  { id: "grill-chicken-thigh-boneless", name: "פרגית על האש", category: "דגים ובשר", serving: "100 גרם", caloriesPer100g: 210, protein: 25, carbs: 0, fat: 12 },
+  { id: "grill-chicken-breast", name: "חזה עוף על האש", category: "דגים ובשר", serving: "100 גרם", caloriesPer100g: 165, protein: 31, carbs: 0, fat: 4 },
+  { id: "grill-merguez", name: "נקניקיות מרגז", category: "דגים ובשר", serving: "יחידה 60 גרם", caloriesPer100g: 310, protein: 16, carbs: 2, fat: 27 },
+  { id: "grill-beef-sausage", name: "נקניקיות בקר על האש", category: "דגים ובשר", serving: "יחידה 60 גרם", caloriesPer100g: 290, protein: 13, carbs: 4, fat: 25 },
+  { id: "grill-chicken-sausage", name: "נקניקיות עוף על האש", category: "דגים ובשר", serving: "יחידה 60 גרם", caloriesPer100g: 220, protein: 13, carbs: 5, fat: 17 },
+  { id: "grill-hot-dog", name: "נקניקייה בלחמנייה", category: "ארוחות מוכנות", serving: "מנה", caloriesPer100g: 285, protein: 10, carbs: 26, fat: 16 },
+];
+
+const alcoholAndCocktailProducts: Product[] = [
+  { id: "beer-goldstar-330", name: "בירה גולדסטאר", brand: "גולדסטאר", category: "אלכוהול", serving: "בקבוק 330 מ״ל", caloriesPer100g: 43, protein: 0.5, carbs: 3.5, fat: 0 },
+  { id: "beer-maccabee-330", name: "בירה מכבי", brand: "טמפו", category: "אלכוהול", serving: "בקבוק 330 מ״ל", caloriesPer100g: 42, protein: 0.5, carbs: 3.5, fat: 0 },
+  { id: "beer-heineken-330", name: "בירה היינקן", brand: "היינקן", category: "אלכוהול", serving: "בקבוק 330 מ״ל", caloriesPer100g: 43, protein: 0.5, carbs: 3.5, fat: 0 },
+  { id: "beer-corona-330", name: "בירה קורונה", brand: "קורונה", category: "אלכוהול", serving: "בקבוק 330 מ״ל", caloriesPer100g: 42, protein: 0.4, carbs: 4, fat: 0 },
+  { id: "beer-stella-330", name: "בירה סטלה ארטואה", brand: "סטלה ארטואה", category: "אלכוהול", serving: "בקבוק 330 מ״ל", caloriesPer100g: 45, protein: 0.5, carbs: 3.8, fat: 0 },
+  { id: "beer-weihenstephan-500", name: "בירת חיטה ויינשטפן", category: "אלכוהול", serving: "בקבוק 500 מ״ל", caloriesPer100g: 48, protein: 0.5, carbs: 4, fat: 0 },
+  { id: "beer-light", name: "בירה לייט", category: "אלכוהול", serving: "בקבוק 330 מ״ל", caloriesPer100g: 30, protein: 0.3, carbs: 2, fat: 0 },
+  { id: "wine-red", name: "יין אדום יבש", category: "אלכוהול", serving: "כוס 150 מ״ל", caloriesPer100g: 85, protein: 0, carbs: 2.6, fat: 0 },
+  { id: "wine-white", name: "יין לבן יבש", category: "אלכוהול", serving: "כוס 150 מ״ל", caloriesPer100g: 82, protein: 0, carbs: 2.6, fat: 0 },
+  { id: "wine-rose", name: "יין רוזה", category: "אלכוהול", serving: "כוס 150 מ״ל", caloriesPer100g: 83, protein: 0, carbs: 3, fat: 0 },
+  { id: "sparkling-wine", name: "קאווה או יין מבעבע", category: "אלכוהול", serving: "כוס 150 מ״ל", caloriesPer100g: 80, protein: 0, carbs: 2.5, fat: 0 },
+  { id: "vodka-shot", name: "וודקה", category: "אלכוהול", serving: "שוט 40 מ״ל", caloriesPer100g: 231, protein: 0, carbs: 0, fat: 0 },
+  { id: "whisky-shot", name: "וויסקי", category: "אלכוהול", serving: "שוט 40 מ״ל", caloriesPer100g: 250, protein: 0, carbs: 0, fat: 0 },
+  { id: "arak-shot", name: "ערק", category: "אלכוהול", serving: "שוט 40 מ״ל", caloriesPer100g: 260, protein: 0, carbs: 0, fat: 0 },
+  { id: "gin-shot", name: "גין", category: "אלכוהול", serving: "שוט 40 מ״ל", caloriesPer100g: 263, protein: 0, carbs: 0, fat: 0 },
+  { id: "rum-shot", name: "רום", category: "אלכוהול", serving: "שוט 40 מ״ל", caloriesPer100g: 231, protein: 0, carbs: 0, fat: 0 },
+  { id: "tequila-shot", name: "טקילה", category: "אלכוהול", serving: "שוט 40 מ״ל", caloriesPer100g: 231, protein: 0, carbs: 0, fat: 0 },
+  { id: "aperol-spritz", name: "אפרול שפריץ", category: "אלכוהול", serving: "כוס קוקטייל", caloriesPer100g: 115, protein: 0, carbs: 12, fat: 0 },
+  { id: "mojito", name: "מוחיטו", category: "אלכוהול", serving: "כוס קוקטייל", caloriesPer100g: 120, protein: 0, carbs: 13, fat: 0 },
+  { id: "margarita", name: "מרגריטה", category: "אלכוהול", serving: "כוס קוקטייל", caloriesPer100g: 165, protein: 0, carbs: 15, fat: 0 },
+  { id: "gin-tonic", name: "ג׳ין טוניק", category: "אלכוהול", serving: "כוס קוקטייל", caloriesPer100g: 95, protein: 0, carbs: 8, fat: 0 },
+  { id: "vodka-redbull", name: "וודקה רדבול", category: "אלכוהול", serving: "כוס קוקטייל", caloriesPer100g: 110, protein: 0, carbs: 12, fat: 0 },
+  { id: "rum-cola", name: "רום קולה", category: "אלכוהול", serving: "כוס קוקטייל", caloriesPer100g: 105, protein: 0, carbs: 11, fat: 0 },
+  { id: "whisky-sour", name: "וויסקי סאוור", category: "אלכוהול", serving: "כוס קוקטייל", caloriesPer100g: 145, protein: 0, carbs: 14, fat: 0 },
+  { id: "espresso-martini", name: "אספרסו מרטיני", category: "אלכוהול", serving: "כוס קוקטייל", caloriesPer100g: 180, protein: 0, carbs: 18, fat: 0 },
+  { id: "pina-colada", name: "פינה קולדה", category: "אלכוהול", serving: "כוס קוקטייל", caloriesPer100g: 190, protein: 1, carbs: 20, fat: 6 },
+];
+
+const breadAndPitaUnitProducts: Product[] = [
+  { id: "bread-slice-white", name: "פרוסת לחם לבן", category: "לחמים ומאפים", serving: "פרוסה 30 גרם", caloriesPer100g: 250, protein: 8, carbs: 49, fat: 3 },
+  { id: "bread-slice-whole", name: "פרוסת לחם מלא", category: "לחמים ומאפים", serving: "פרוסה 30 גרם", caloriesPer100g: 235, protein: 9, carbs: 41, fat: 4 },
+  { id: "bread-slice-light", name: "פרוסת לחם קל", category: "לחמים ומאפים", serving: "פרוסה 22 גרם", caloriesPer100g: 185, protein: 9, carbs: 34, fat: 2 },
+  { id: "bread-slice-rye", name: "פרוסת לחם שיפון", category: "לחמים ומאפים", serving: "פרוסה 30 גרם", caloriesPer100g: 250, protein: 9, carbs: 48, fat: 3 },
+  { id: "bread-slice-spelt", name: "פרוסת לחם כוסמין", category: "לחמים ומאפים", serving: "פרוסה 30 גרם", caloriesPer100g: 245, protein: 10, carbs: 42, fat: 4 },
+  { id: "bread-slice-sourdough", name: "פרוסת לחם מחמצת", category: "לחמים ומאפים", serving: "פרוסה 35 גרם", caloriesPer100g: 260, protein: 9, carbs: 50, fat: 3 },
+  { id: "pita-unit-regular", name: "פיתה אחת", category: "לחמים ומאפים", serving: "יחידה 90 גרם", caloriesPer100g: 275, protein: 9, carbs: 55, fat: 1 },
+  { id: "pita-unit-light", name: "פיתה קלה אחת", category: "לחמים ומאפים", serving: "יחידה 55 גרם", caloriesPer100g: 210, protein: 9, carbs: 38, fat: 2 },
+  { id: "pita-unit-light-99", name: "פיתה קלה 99 קלוריות", category: "לחמים ומאפים", serving: "יחידה 47 גרם", caloriesPer100g: 210, protein: 9, carbs: 38, fat: 2 },
+  { id: "pita-unit-light-protein", name: "פיתה קלה חלבון", category: "לחמים ומאפים", serving: "יחידה 60 גרם", caloriesPer100g: 220, protein: 15, carbs: 30, fat: 3 },
+  { id: "pita-unit-whole", name: "פיתה מלאה", category: "לחמים ומאפים", serving: "יחידה 90 גרם", caloriesPer100g: 250, protein: 10, carbs: 48, fat: 2 },
+  { id: "pita-unit-spelt", name: "פיתה כוסמין", category: "לחמים ומאפים", serving: "יחידה 90 גרם", caloriesPer100g: 260, protein: 9, carbs: 48, fat: 4 },
+];
+
 export const products: Product[] = [
   ...staples,
   ...moreNames.map(([name, category, caloriesPer100g, protein, carbs, fat], index) => ({
@@ -1365,6 +1438,9 @@ export const products: Product[] = [
   ...supermarketFocusedProducts,
   ...mullerYotvataProducts,
   ...basicCheeseProducts,
+  ...grillMeatProducts,
+  ...alcoholAndCocktailProducts,
+  ...breadAndPitaUnitProducts,
 ].sort((a, b) => a.name.localeCompare(b.name, "he"));
 
 export const categories = Array.from(new Set(products.map((product) => product.category))).sort(

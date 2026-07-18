@@ -64,6 +64,51 @@ const drinkUnits: UnitOption[] = [
   { id: "bottle", label: "בקבוק קטן", gramsPerUnit: 500, defaultValue: 1, quickValues: [1, 2] },
 ];
 
+const alcoholUnits: UnitOption[] = [
+  { id: "ml", label: "מ״ל", gramsPerUnit: 1, defaultValue: 150, quickValues: [40, 60, 150, 250, 330, 500] },
+  { id: "shot", label: "שוט", gramsPerUnit: 40, defaultValue: 1, quickValues: [1, 2, 3] },
+  { id: "wine-glass", label: "כוס יין", gramsPerUnit: 150, defaultValue: 1, quickValues: [1, 2] },
+  { id: "cocktail-glass", label: "כוס קוקטייל", gramsPerUnit: 180, defaultValue: 1, quickValues: [1, 2] },
+  { id: "beer-bottle", label: "בקבוק/פחית", gramsPerUnit: 330, defaultValue: 1, quickValues: [1, 2, 3] },
+];
+
+const breadSliceUnits: UnitOption[] = [
+  { id: "slice", label: "פרוסה", gramsPerUnit: 30, defaultValue: 1, quickValues: [1, 2, 3, 4] },
+  { id: "g", label: "גרם", gramsPerUnit: 1, defaultValue: 30, quickValues: [25, 30, 60, 90, 120] },
+];
+
+const lightBreadSliceUnits: UnitOption[] = [
+  { id: "slice", label: "פרוסה", gramsPerUnit: 22, defaultValue: 2, quickValues: [1, 2, 3, 4] },
+  { id: "g", label: "גרם", gramsPerUnit: 1, defaultValue: 44, quickValues: [22, 44, 66, 88] },
+];
+
+const pitaUnits: UnitOption[] = [
+  { id: "pita", label: "פיתה", gramsPerUnit: 90, defaultValue: 1, quickValues: [0.5, 1, 1.5, 2] },
+  { id: "half-pita", label: "חצי פיתה", gramsPerUnit: 45, defaultValue: 1, quickValues: [1, 2, 3] },
+  { id: "g", label: "גרם", gramsPerUnit: 1, defaultValue: 90, quickValues: [45, 60, 90, 120] },
+];
+
+const lightPitaUnits: UnitOption[] = [
+  { id: "pita", label: "פיתה קלה", gramsPerUnit: 55, defaultValue: 1, quickValues: [0.5, 1, 1.5, 2] },
+  { id: "half-pita", label: "חצי פיתה", gramsPerUnit: 28, defaultValue: 1, quickValues: [1, 2, 3] },
+  { id: "g", label: "גרם", gramsPerUnit: 1, defaultValue: 55, quickValues: [30, 45, 55, 70] },
+];
+
+const sausageUnits: UnitOption[] = [
+  { id: "unit", label: "יחידה", gramsPerUnit: 60, defaultValue: 1, quickValues: [1, 2, 3, 4] },
+  { id: "g", label: "גרם", gramsPerUnit: 1, defaultValue: 100, quickValues: [60, 100, 150, 200] },
+];
+
+const skewerUnits: UnitOption[] = [
+  { id: "skewer", label: "שיפוד", gramsPerUnit: 120, defaultValue: 1, quickValues: [1, 2, 3] },
+  { id: "g", label: "גרם", gramsPerUnit: 1, defaultValue: 150, quickValues: [100, 150, 200, 250, 300] },
+];
+
+const steakUnits: UnitOption[] = [
+  { id: "g", label: "גרם", gramsPerUnit: 1, defaultValue: 250, quickValues: [100, 150, 200, 250, 300, 400] },
+  { id: "steak", label: "סטייק", gramsPerUnit: 250, defaultValue: 1, quickValues: [0.5, 1, 1.5, 2] },
+];
+
 const spoonUnits: UnitOption[] = [
   { id: "g", label: "גרם", gramsPerUnit: 1, defaultValue: 10, quickValues: [5, 10, 15, 30, 50] },
   { id: "tsp", label: "כפית", gramsPerUnit: 5, defaultValue: 1, quickValues: [1, 2, 3, 4] },
@@ -245,7 +290,11 @@ const scannerHints = new Map<DecodeHintType, unknown>([
 const getUnitOptions = (product: Product): UnitOption[] => {
   const text = `${product.name} ${product.brand ?? ""} ${product.category}`.toLowerCase();
 
-  if (product.category === "שתייה" || /משקה|מיץ|קולה|סודה|מים|בירה|יין|קפה|תה|שוקו/.test(text)) {
+  if (/אלכוהול|קוקטייל|בירה|יין|וודקה|וויסקי|ויסקי|ערק|גין|רום|טקילה|מרגריטה|מוחיטו|קמפרי|אפרול|קאווה|שמפניה/.test(text)) {
+    return alcoholUnits;
+  }
+
+  if (product.category === "שתייה" || /משקה|מיץ|קולה|סודה|מים|קפה|תה|שוקו/.test(text)) {
     return drinkUnits;
   }
 
@@ -260,7 +309,35 @@ const getUnitOptions = (product: Product): UnitOption[] => {
     return spoonUnits;
   }
 
-  if (product.category === "ארוחות מוכנות" || /מנה|פיתה|לאפה|כריך|סלט|קערת|ארוחת/.test(text)) {
+  if (/פיתה קלה|פיתות קלות|פיתה חלבון|פיתה 99|פיתה 100|פיתה 125/.test(text)) {
+    return lightPitaUnits;
+  }
+
+  if (/פיתה|פיתות/.test(text)) {
+    return pitaUnits;
+  }
+
+  if (/לחם קל|לחם חלבון/.test(text)) {
+    return lightBreadSliceUnits;
+  }
+
+  if (/לחם|חלה|טוסט/.test(text)) {
+    return breadSliceUnits;
+  }
+
+  if (/נקניק|נקניקיה|נקניקייה|מרגז/.test(text)) {
+    return sausageUnits;
+  }
+
+  if (/שיפוד|שיפודי/.test(text)) {
+    return skewerUnits;
+  }
+
+  if (/סטייק|אנטריקוט|סינטה|פילה בקר|צלעות טלה|אסאדו|נתח קצבים/.test(text)) {
+    return steakUnits;
+  }
+
+  if (product.category === "ארוחות מוכנות" || /מנה|לאפה|כריך|סלט|קערת|ארוחת/.test(text)) {
     return portionUnits;
   }
 
