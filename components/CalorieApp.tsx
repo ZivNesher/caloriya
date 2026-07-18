@@ -4,6 +4,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { BarcodeFormat, BrowserMultiFormatOneDReader, type IScannerControls } from "@zxing/browser";
 import { DecodeHintType } from "@zxing/library";
 import { products, type Product } from "@/data/products";
+import {
+  defaultProfile,
+  clampNumber,
+  sanitizeProfile,
+  sanitizeSettings,
+  sanitizeWeights,
+  type Profile,
+  type Weights,
+} from "@/lib/settingsSchema";
 
 type MealKey = "breakfast" | "lunch" | "dinner" | "night" | "snacks";
 
@@ -18,17 +27,6 @@ type Entry = {
 
 type DayLog = Record<MealKey, Entry[]>;
 type Logs = Record<string, DayLog>;
-type Weights = Record<string, number>;
-
-type Profile = {
-  name: string;
-  heightCm: number;
-  age: number;
-  sex: "male" | "female";
-  activity: number;
-  targetWeightKg: number;
-  weeklyLossKg: number;
-};
 
 const mealLabels: Record<MealKey, string> = {
   breakfast: "בוקר",
@@ -47,16 +45,6 @@ const mealHints: Record<MealKey, string> = {
 };
 
 const mealOrder = Object.keys(mealLabels) as MealKey[];
-const defaultProfile: Profile = {
-  name: "",
-  heightCm: 175,
-  age: 35,
-  sex: "male",
-  activity: 1.35,
-  targetWeightKg: 75,
-  weeklyLossKg: 0.5,
-};
-
 type UnitOption = {
   id: string;
   label: string;
@@ -297,8 +285,8 @@ function useStoredSettings() {
         const raw = window.localStorage.getItem("calor-settings-v1");
         if (raw) {
           const parsed = JSON.parse(raw) as { profile?: Partial<Profile>; weights?: Weights };
-          localProfile = { ...defaultProfile, ...(parsed.profile ?? {}) };
-          localWeights = parsed.weights ?? {};
+          localProfile = sanitizeProfile(parsed.profile);
+          localWeights = sanitizeWeights(parsed.weights);
         }
       } catch {
         localProfile = defaultProfile;
@@ -311,9 +299,9 @@ function useStoredSettings() {
         const payload = (await response.json()) as {
           settings?: { profile?: Partial<Profile>; weights?: Weights };
         };
-        const serverSettings = payload.settings ?? {};
-        const nextProfile = { ...localProfile, ...(serverSettings.profile ?? {}) };
-        const nextWeights = { ...localWeights, ...(serverSettings.weights ?? {}) };
+        const serverSettings = sanitizeSettings(payload.settings);
+        const nextProfile = sanitizeProfile({ ...localProfile, ...serverSettings.profile });
+        const nextWeights = sanitizeWeights({ ...localWeights, ...serverSettings.weights });
 
         if (cancelled) return;
         setProfile(nextProfile);
@@ -321,8 +309,8 @@ function useStoredSettings() {
 
         if (
           (Object.keys(localWeights).length || localProfile.name) &&
-          !serverSettings.profile &&
-          !serverSettings.weights
+          !payload.settings?.profile &&
+          !payload.settings?.weights
         ) {
           await fetch("/api/settings", {
             method: "PUT",
@@ -349,7 +337,7 @@ function useStoredSettings() {
     if (!loaded) return;
 
     const timeout = window.setTimeout(() => {
-      const settings = { profile, weights };
+      const settings = { profile: sanitizeProfile(profile), weights: sanitizeWeights(weights) };
       window.localStorage.setItem("calor-settings-v1", JSON.stringify(settings));
       void fetch("/api/settings", {
         method: "PUT",
@@ -383,30 +371,34 @@ function weekKeys(selectedDate: string) {
 }
 
 function getCurrentWeight(weights: Weights, selectedDate: string, fallback: number) {
-  if (weights[selectedDate]) return weights[selectedDate];
+  if (Number.isFinite(weights[selectedDate]) && weights[selectedDate] > 0) return weights[selectedDate];
 
   const latest = Object.entries(weights)
     .filter(([, value]) => Number.isFinite(value) && value > 0)
     .sort(([dateA], [dateB]) => dateB.localeCompare(dateA))[0];
 
-  return latest?.[1] ?? fallback;
+  return latest?.[1] ?? clampNumber(fallback, defaultProfile.targetWeightKg, 30, 300);
 }
 
 function calculateBmi(weightKg: number, heightCm: number) {
-  if (!weightKg || !heightCm) return 0;
-  const heightM = heightCm / 100;
-  return weightKg / (heightM * heightM);
+  const safeWeight = clampNumber(weightKg, defaultProfile.targetWeightKg, 30, 300);
+  const safeHeight = clampNumber(heightCm, defaultProfile.heightCm, 80, 250);
+  if (!safeWeight || !safeHeight) return 0;
+  const heightM = safeHeight / 100;
+  return safeWeight / (heightM * heightM);
 }
 
 function calculateDailyTarget(profile: Profile, weightKg: number) {
+  const safeProfile = sanitizeProfile(profile);
+  const safeWeight = clampNumber(weightKg, safeProfile.targetWeightKg, 30, 300);
   const base =
-    10 * weightKg +
-    6.25 * profile.heightCm -
-    5 * profile.age +
-    (profile.sex === "male" ? 5 : -161);
-  const maintenance = base * profile.activity;
-  const deficit = (profile.weeklyLossKg * 7700) / 7;
-  const floor = profile.sex === "male" ? 1500 : 1200;
+    10 * safeWeight +
+    6.25 * safeProfile.heightCm -
+    5 * safeProfile.age +
+    (safeProfile.sex === "male" ? 5 : -161);
+  const maintenance = base * safeProfile.activity;
+  const deficit = (safeProfile.weeklyLossKg * 7700) / 7;
+  const floor = safeProfile.sex === "male" ? 1500 : 1200;
 
   return Math.max(floor, Math.round(maintenance - deficit));
 }
@@ -574,16 +566,32 @@ export function CalorieApp() {
     setCameraStatus("");
   };
 
-  const updateTodayWeight = (value: number) => {
+  const updateTodayWeight = (value: string) => {
     setWeights((current) => {
       const next = { ...current };
-      if (!Number.isFinite(value) || value <= 0) {
+      if (value.trim() === "") {
         delete next[selectedDate];
         return next;
       }
-      next[selectedDate] = value;
+      const numericValue = Number(value);
+      if (!Number.isFinite(numericValue) || numericValue <= 0 || numericValue >= 400) return current;
+      next[selectedDate] = numericValue;
       return next;
     });
+  };
+
+  const updateProfileText = (field: "name", value: string) => {
+    setProfile((current) => sanitizeProfile({ ...current, [field]: value }));
+  };
+
+  const updateProfileNumber = (
+    field: Exclude<keyof Profile, "name" | "sex">,
+    value: string,
+  ) => {
+    if (value.trim() === "") return;
+    const nextValue = Number(value.replace(",", "."));
+    if (!Number.isFinite(nextValue)) return;
+    setProfile((current) => sanitizeProfile({ ...current, [field]: nextValue }));
   };
 
   const lookupBarcode = async (code = barcode) => {
@@ -772,8 +780,8 @@ export function CalorieApp() {
             step="0.1"
             value={weights[selectedDate] ?? ""}
             placeholder={`${currentWeight || ""}`}
-            onChange={(event) => updateTodayWeight(Number(event.target.value))}
-            onInput={(event) => updateTodayWeight(Number(event.currentTarget.value))}
+            onChange={(event) => updateTodayWeight(event.target.value)}
+            onInput={(event) => updateTodayWeight(event.currentTarget.value)}
           />
         </label>
         <div>
@@ -829,34 +837,38 @@ export function CalorieApp() {
             <label>
               שם
               <input
-                value={profile.name}
-                onChange={(event) => setProfile((current) => ({ ...current, name: event.target.value }))}
-                onInput={(event) => setProfile((current) => ({ ...current, name: event.currentTarget.value }))}
+                value={profile.name ?? ""}
+                onChange={(event) => updateProfileText("name", event.target.value)}
+                onInput={(event) => updateProfileText("name", event.currentTarget.value)}
               />
             </label>
             <label>
               גובה
               <input
                 type="number"
-                value={profile.heightCm}
-                onChange={(event) => setProfile((current) => ({ ...current, heightCm: Number(event.target.value) }))}
-                onInput={(event) => setProfile((current) => ({ ...current, heightCm: Number(event.currentTarget.value) }))}
+                value={Number.isFinite(profile.heightCm) ? profile.heightCm : ""}
+                onChange={(event) => updateProfileNumber("heightCm", event.target.value)}
+                onInput={(event) => updateProfileNumber("heightCm", event.currentTarget.value)}
               />
             </label>
             <label>
               גיל
               <input
                 type="number"
-                value={profile.age}
-                onChange={(event) => setProfile((current) => ({ ...current, age: Number(event.target.value) }))}
-                onInput={(event) => setProfile((current) => ({ ...current, age: Number(event.currentTarget.value) }))}
+                value={Number.isFinite(profile.age) ? profile.age : ""}
+                onChange={(event) => updateProfileNumber("age", event.target.value)}
+                onInput={(event) => updateProfileNumber("age", event.currentTarget.value)}
               />
             </label>
             <label>
               מין לחישוב
               <select
                 value={profile.sex}
-                onChange={(event) => setProfile((current) => ({ ...current, sex: event.target.value as Profile["sex"] }))}
+                onChange={(event) =>
+                  setProfile((current) =>
+                    sanitizeProfile({ ...current, sex: event.target.value as Profile["sex"] }),
+                  )
+                }
               >
                 <option value="male">זכר</option>
                 <option value="female">נקבה</option>
@@ -867,16 +879,16 @@ export function CalorieApp() {
               <input
                 type="number"
                 step="0.1"
-                value={profile.targetWeightKg}
-                onChange={(event) => setProfile((current) => ({ ...current, targetWeightKg: Number(event.target.value) }))}
-                onInput={(event) => setProfile((current) => ({ ...current, targetWeightKg: Number(event.currentTarget.value) }))}
+                value={Number.isFinite(profile.targetWeightKg) ? profile.targetWeightKg : ""}
+                onChange={(event) => updateProfileNumber("targetWeightKg", event.target.value)}
+                onInput={(event) => updateProfileNumber("targetWeightKg", event.currentTarget.value)}
               />
             </label>
             <label>
               ירידה בשבוע
               <select
                 value={profile.weeklyLossKg}
-                onChange={(event) => setProfile((current) => ({ ...current, weeklyLossKg: Number(event.target.value) }))}
+                onChange={(event) => updateProfileNumber("weeklyLossKg", event.target.value)}
               >
                 <option value={0.25}>0.25 ק״ג</option>
                 <option value={0.5}>0.5 ק״ג</option>
@@ -888,7 +900,7 @@ export function CalorieApp() {
               פעילות
               <select
                 value={profile.activity}
-                onChange={(event) => setProfile((current) => ({ ...current, activity: Number(event.target.value) }))}
+                onChange={(event) => updateProfileNumber("activity", event.target.value)}
               >
                 <option value={1.2}>מעט פעילות</option>
                 <option value={1.35}>קל</option>

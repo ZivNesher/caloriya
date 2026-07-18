@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { readSettings, writeSettings } from "@/lib/settingsStorage";
+import { sanitizeSettings } from "@/lib/settingsSchema";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET() {
-  const settings = await readSettings();
+  const settings = sanitizeSettings(await readSettings());
   return NextResponse.json({ settings });
 }
 
@@ -24,6 +25,7 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Invalid settings payload" }, { status: 400 });
   }
 
-  await writeSettings(settings as Record<string, unknown>);
-  return NextResponse.json({ ok: true });
+  const safeSettings = sanitizeSettings(settings);
+  await writeSettings(safeSettings);
+  return NextResponse.json({ ok: true, settings: safeSettings });
 }
