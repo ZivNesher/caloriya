@@ -1,6 +1,7 @@
 {
   "version": 1,
   "functions": {
-    "/api/logs": {}
+    "/api/logs": {},
+    "/api/settings": {}
   }
 }

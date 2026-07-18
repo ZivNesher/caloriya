@@ -18,6 +18,17 @@ type Entry = {
 
 type DayLog = Record<MealKey, Entry[]>;
 type Logs = Record<string, DayLog>;
+type Weights = Record<string, number>;
+
+type Profile = {
+  name: string;
+  heightCm: number;
+  age: number;
+  sex: "male" | "female";
+  activity: number;
+  targetWeightKg: number;
+  weeklyLossKg: number;
+};
 
 const mealLabels: Record<MealKey, string> = {
   breakfast: "בוקר",
@@ -36,6 +47,15 @@ const mealHints: Record<MealKey, string> = {
 };
 
 const mealOrder = Object.keys(mealLabels) as MealKey[];
+const defaultProfile: Profile = {
+  name: "",
+  heightCm: 175,
+  age: 35,
+  sex: "male",
+  activity: 1.35,
+  targetWeightKg: 75,
+  weeklyLossKg: 0.5,
+};
 
 type UnitOption = {
   id: string;
@@ -261,6 +281,89 @@ function useStoredLogs() {
   return [logs, setLogs, storageStatus] as const;
 }
 
+function useStoredSettings() {
+  const [profile, setProfile] = useState<Profile>(defaultProfile);
+  const [weights, setWeights] = useState<Weights>({});
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSettings = async () => {
+      let localProfile = defaultProfile;
+      let localWeights: Weights = {};
+
+      try {
+        const raw = window.localStorage.getItem("calor-settings-v1");
+        if (raw) {
+          const parsed = JSON.parse(raw) as { profile?: Partial<Profile>; weights?: Weights };
+          localProfile = { ...defaultProfile, ...(parsed.profile ?? {}) };
+          localWeights = parsed.weights ?? {};
+        }
+      } catch {
+        localProfile = defaultProfile;
+        localWeights = {};
+      }
+
+      try {
+        const response = await fetch("/api/settings", { cache: "no-store" });
+        if (!response.ok) throw new Error("Failed to load settings");
+        const payload = (await response.json()) as {
+          settings?: { profile?: Partial<Profile>; weights?: Weights };
+        };
+        const serverSettings = payload.settings ?? {};
+        const nextProfile = { ...localProfile, ...(serverSettings.profile ?? {}) };
+        const nextWeights = { ...localWeights, ...(serverSettings.weights ?? {}) };
+
+        if (cancelled) return;
+        setProfile(nextProfile);
+        setWeights(nextWeights);
+
+        if (
+          (Object.keys(localWeights).length || localProfile.name) &&
+          !serverSettings.profile &&
+          !serverSettings.weights
+        ) {
+          await fetch("/api/settings", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ settings: { profile: nextProfile, weights: nextWeights } }),
+          });
+        }
+      } catch {
+        if (cancelled) return;
+        setProfile(localProfile);
+        setWeights(localWeights);
+      } finally {
+        if (!cancelled) setLoaded(true);
+      }
+    };
+
+    void loadSettings();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!loaded) return;
+
+    const timeout = window.setTimeout(() => {
+      const settings = { profile, weights };
+      window.localStorage.setItem("calor-settings-v1", JSON.stringify(settings));
+      void fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings }),
+      }).catch(() => undefined);
+    }, 350);
+
+    return () => window.clearTimeout(timeout);
+  }, [loaded, profile, weights]);
+
+  return { profile, setProfile, weights, setWeights } as const;
+}
+
 function totalCalories(day: DayLog) {
   return mealOrder.reduce(
     (sum, meal) => sum + day[meal].reduce((mealSum, entry) => mealSum + caloriesFor(entry), 0),
@@ -279,8 +382,46 @@ function weekKeys(selectedDate: string) {
   });
 }
 
+function getCurrentWeight(weights: Weights, selectedDate: string, fallback: number) {
+  if (weights[selectedDate]) return weights[selectedDate];
+
+  const latest = Object.entries(weights)
+    .filter(([, value]) => Number.isFinite(value) && value > 0)
+    .sort(([dateA], [dateB]) => dateB.localeCompare(dateA))[0];
+
+  return latest?.[1] ?? fallback;
+}
+
+function calculateBmi(weightKg: number, heightCm: number) {
+  if (!weightKg || !heightCm) return 0;
+  const heightM = heightCm / 100;
+  return weightKg / (heightM * heightM);
+}
+
+function calculateDailyTarget(profile: Profile, weightKg: number) {
+  const base =
+    10 * weightKg +
+    6.25 * profile.heightCm -
+    5 * profile.age +
+    (profile.sex === "male" ? 5 : -161);
+  const maintenance = base * profile.activity;
+  const deficit = (profile.weeklyLossKg * 7700) / 7;
+  const floor = profile.sex === "male" ? 1500 : 1200;
+
+  return Math.max(floor, Math.round(maintenance - deficit));
+}
+
+function bmiLabel(bmi: number) {
+  if (!bmi) return "חסר נתון";
+  if (bmi < 18.5) return "מתחת לנורמה";
+  if (bmi < 25) return "בטווח תקין";
+  if (bmi < 30) return "עודף משקל";
+  return "השמנה";
+}
+
 export function CalorieApp() {
   const [logs, setLogs, storageStatus] = useStoredLogs();
+  const { profile, setProfile, weights, setWeights } = useStoredSettings();
   const [selectedDate, setSelectedDate] = useState(() => toDateKey(new Date()));
   const [query, setQuery] = useState("");
   const [selectedMeal, setSelectedMeal] = useState<MealKey>("breakfast");
@@ -298,6 +439,8 @@ export function CalorieApp() {
   const [lastScannedProduct, setLastScannedProduct] = useState<Product | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [choosingMeal, setChoosingMeal] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showWeekSummary, setShowWeekSummary] = useState(false);
   const [notice, setNotice] = useState("");
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -306,11 +449,15 @@ export function CalorieApp() {
   const day = logs[selectedDate] ?? emptyDay();
   const weeks = useMemo(() => weekKeys(selectedDate), [selectedDate]);
   const dailyTotal = totalCalories(day);
-  const goal = 2200;
+  const currentWeight = getCurrentWeight(weights, selectedDate, profile.targetWeightKg);
+  const bmi = calculateBmi(currentWeight, profile.heightCm);
+  const goal = calculateDailyTarget(profile, currentWeight);
   const progress = Math.min(100, Math.round((dailyTotal / goal) * 100));
   const remaining = Math.max(0, goal - dailyTotal);
   const allEntries = useMemo(() => mealOrder.flatMap((meal) => day[meal]), [day]);
   const entryCount = allEntries.length;
+  const weeklyTotal = weeks.reduce((sum, dateKey) => sum + totalCalories(logs[dateKey] ?? emptyDay()), 0);
+  const weeklyGoal = goal * 7;
   const unitOptions = selectedProduct ? getUnitOptions(selectedProduct) : gramUnits;
   const selectedUnit = unitOptions.find((unit) => unit.id === selectedUnitId) ?? unitOptions[0];
   const selectedGrams = Math.max(1, amountValue * selectedUnit.gramsPerUnit);
@@ -425,6 +572,18 @@ export function CalorieApp() {
     setBarcode("");
     setBarcodeStatus("");
     setCameraStatus("");
+  };
+
+  const updateTodayWeight = (value: number) => {
+    setWeights((current) => {
+      const next = { ...current };
+      if (!Number.isFinite(value) || value <= 0) {
+        delete next[selectedDate];
+        return next;
+      }
+      next[selectedDate] = value;
+      return next;
+    });
   };
 
   const lookupBarcode = async (code = barcode) => {
@@ -560,16 +719,21 @@ export function CalorieApp() {
           <p className="eyebrow">קלורית</p>
           <h1>יומן קלוריות ישראלי</h1>
           <p className="subline">{formatHebrewDate(selectedDate)} · {entryCount} פריטים נרשמו</p>
-          <p className="storage-status">{storageStatus}</p>
+          <div className="status-actions">
+            <p className="storage-status">{storageStatus}</p>
+            <button type="button" className="settings-button" onClick={() => setShowSettings(true)}>
+              הגדרות
+            </button>
+          </div>
         </div>
-        <div className="today-card">
+        <button type="button" className="today-card" onClick={() => setShowWeekSummary(true)}>
           <span>סה"כ היום</span>
           <strong>{dailyTotal.toLocaleString("he-IL")}</strong>
-          <small>{remaining ? `נשארו ${remaining.toLocaleString("he-IL")} קק"ל` : "עברת את היעד היומי"}</small>
+          <small>{remaining ? `נשארו ${remaining.toLocaleString("he-IL")} מתוך ${goal.toLocaleString("he-IL")}` : "עברת את היעד היומי"}</small>
           <div className="progress" aria-label={`התקדמות ${progress}%`}>
             <span style={{ width: `${progress}%` }} />
           </div>
-        </div>
+        </button>
       </section>
 
       <section className="calendar-strip" aria-label="לוח שנה">
@@ -598,6 +762,147 @@ export function CalorieApp() {
           ›
         </button>
       </section>
+
+      <section className="health-strip" aria-label="משקל ויעד">
+        <label>
+          משקל היום
+          <input
+            type="number"
+            min="20"
+            step="0.1"
+            value={weights[selectedDate] ?? ""}
+            placeholder={`${currentWeight || ""}`}
+            onChange={(event) => updateTodayWeight(Number(event.target.value))}
+            onInput={(event) => updateTodayWeight(Number(event.currentTarget.value))}
+          />
+        </label>
+        <div>
+          <span>BMI</span>
+          <strong>{bmi ? bmi.toFixed(1) : "-"}</strong>
+          <small>{bmiLabel(bmi)}</small>
+        </div>
+        <div>
+          <span>יעד יומי</span>
+          <strong>{goal.toLocaleString("he-IL")}</strong>
+          <small>קק"ל לירידה של {profile.weeklyLossKg} ק״ג בשבוע</small>
+        </div>
+      </section>
+
+      {showWeekSummary ? (
+        <section className="modal-panel" aria-label="סיכום שבועי">
+          <div className="modal-head">
+            <div>
+              <p className="eyebrow">שבוע</p>
+              <h2>קלוריות השבוע</h2>
+            </div>
+            <button type="button" onClick={() => setShowWeekSummary(false)}>×</button>
+          </div>
+          <div className="week-total">
+            <strong>{weeklyTotal.toLocaleString("he-IL")}</strong>
+            <span>מתוך {weeklyGoal.toLocaleString("he-IL")} קק"ל</span>
+          </div>
+          <div className="week-bars">
+            {weeks.map((dateKey) => {
+              const total = totalCalories(logs[dateKey] ?? emptyDay());
+              return (
+                <div key={dateKey}>
+                  <span>{new Intl.DateTimeFormat("he-IL", { weekday: "short" }).format(fromDateKey(dateKey))}</span>
+                  <div><i style={{ width: `${Math.min(100, (total / goal) * 100)}%` }} /></div>
+                  <strong>{total.toLocaleString("he-IL")}</strong>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
+      {showSettings ? (
+        <section className="modal-panel settings-panel" aria-label="הגדרות">
+          <div className="modal-head">
+            <div>
+              <p className="eyebrow">פרופיל</p>
+              <h2>הגדרות יעד</h2>
+            </div>
+            <button type="button" onClick={() => setShowSettings(false)}>×</button>
+          </div>
+          <div className="settings-grid">
+            <label>
+              שם
+              <input
+                value={profile.name}
+                onChange={(event) => setProfile((current) => ({ ...current, name: event.target.value }))}
+                onInput={(event) => setProfile((current) => ({ ...current, name: event.currentTarget.value }))}
+              />
+            </label>
+            <label>
+              גובה
+              <input
+                type="number"
+                value={profile.heightCm}
+                onChange={(event) => setProfile((current) => ({ ...current, heightCm: Number(event.target.value) }))}
+                onInput={(event) => setProfile((current) => ({ ...current, heightCm: Number(event.currentTarget.value) }))}
+              />
+            </label>
+            <label>
+              גיל
+              <input
+                type="number"
+                value={profile.age}
+                onChange={(event) => setProfile((current) => ({ ...current, age: Number(event.target.value) }))}
+                onInput={(event) => setProfile((current) => ({ ...current, age: Number(event.currentTarget.value) }))}
+              />
+            </label>
+            <label>
+              מין לחישוב
+              <select
+                value={profile.sex}
+                onChange={(event) => setProfile((current) => ({ ...current, sex: event.target.value as Profile["sex"] }))}
+              >
+                <option value="male">זכר</option>
+                <option value="female">נקבה</option>
+              </select>
+            </label>
+            <label>
+              משקל יעד
+              <input
+                type="number"
+                step="0.1"
+                value={profile.targetWeightKg}
+                onChange={(event) => setProfile((current) => ({ ...current, targetWeightKg: Number(event.target.value) }))}
+                onInput={(event) => setProfile((current) => ({ ...current, targetWeightKg: Number(event.currentTarget.value) }))}
+              />
+            </label>
+            <label>
+              ירידה בשבוע
+              <select
+                value={profile.weeklyLossKg}
+                onChange={(event) => setProfile((current) => ({ ...current, weeklyLossKg: Number(event.target.value) }))}
+              >
+                <option value={0.25}>0.25 ק״ג</option>
+                <option value={0.5}>0.5 ק״ג</option>
+                <option value={0.75}>0.75 ק״ג</option>
+                <option value={1}>1 ק״ג</option>
+              </select>
+            </label>
+            <label>
+              פעילות
+              <select
+                value={profile.activity}
+                onChange={(event) => setProfile((current) => ({ ...current, activity: Number(event.target.value) }))}
+              >
+                <option value={1.2}>מעט פעילות</option>
+                <option value={1.35}>קל</option>
+                <option value={1.55}>בינוני</option>
+                <option value={1.75}>גבוה</option>
+              </select>
+            </label>
+          </div>
+          <div className="settings-result">
+            <strong>{goal.toLocaleString("he-IL")} קק"ל ליום</strong>
+            <span>BMI נוכחי {bmi ? bmi.toFixed(1) : "-"} · {bmiLabel(bmi)}</span>
+          </div>
+        </section>
+      ) : null}
 
       <section className="dashboard">
         <div className="panel meals-panel">

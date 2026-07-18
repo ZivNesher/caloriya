@@ -3,5 +3,6 @@
   "/_not-found/page": "/_not-found",
   "/api/barcode/[code]/route": "/api/barcode/[code]",
   "/api/logs/route": "/api/logs",
+  "/api/settings/route": "/api/settings",
   "/page": "/"
 }
