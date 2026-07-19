@@ -279,7 +279,13 @@ const pickRearCameraId = async () => {
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const cameras = devices.filter((device) => device.kind === "videoinput");
-    if (!cameras.length) return undefined;
+    if (cameras.length < 2) return undefined;
+
+    // Labels stay empty until camera permission has been granted once. Without
+    // them there is nothing to choose by, so let the browser pick this time and
+    // pin the lens on the next scan instead - reopening the camera mid-session
+    // to correct the choice makes iOS Safari drop the device as busy.
+    if (cameras.every((device) => !device.label)) return undefined;
 
     const labelOf = (device: MediaDeviceInfo) => device.label.toLowerCase();
     const rear = cameras.filter((device) => /back|rear|environment|אחורית/.test(labelOf(device)));
@@ -922,20 +928,26 @@ export function CalorieApp() {
       // Opening the camera here (rather than letting zxing do it) keeps
       // getUserMedia inside the tap that started the scan, which Safari needs,
       // and lets us pick the lens instead of leaving it to the browser.
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: videoConstraintsFor(),
-        audio: false,
-      });
-
-      // Device labels only become readable once permission is granted, so the
-      // lens can only be chosen after this first open.
+      //
+      // This must stay a single successful open: releasing a live stream and
+      // reopening it to switch lens makes iOS Safari fail with NotReadableError
+      // and kills the scanner right after the preview appears.
       const rearId = await pickRearCameraId();
-      const activeId = stream.getVideoTracks()[0]?.getSettings().deviceId;
 
-      if (rearId && rearId !== activeId) {
-        stream.getTracks().forEach((track) => track.stop());
+      if (rearId) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: videoConstraintsFor(rearId),
+            audio: false,
+          });
+        } catch {
+          stream = null;
+        }
+      }
+
+      if (!stream) {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: videoConstraintsFor(rearId),
+          video: videoConstraintsFor(),
           audio: false,
         });
       }
@@ -974,7 +986,9 @@ export function CalorieApp() {
           ? "הרשאת מצלמה נדחתה. בספארי: הגדרות האתר ← מצלמה ← אפשר, ואז נסה שוב."
           : errorName === "NotFoundError"
             ? "לא נמצאה מצלמה במכשיר הזה. אפשר להקליד את הברקוד ידנית."
-            : "לא הצלחנו לפתוח את המצלמה. ודא שהאתר פתוח ב-HTTPS ושאישרת הרשאת מצלמה בספארי.",
+            : errorName === "NotReadableError"
+              ? "המצלמה תפוסה על ידי אפליקציה אחרת. סגור אותה, או סגור טאבים אחרים, ונסה שוב."
+              : `לא הצלחנו לפתוח את המצלמה${errorName ? ` (${errorName})` : ""}. ודא שהאתר פתוח ב-HTTPS ושאישרת הרשאת מצלמה בספארי.`,
       );
       stopScanner();
     }

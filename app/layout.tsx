@@ -4,6 +4,15 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "קלורית",
   description: "יומן קלוריות בעברית עם סריקת ברקוד ומאגר מוצרים ישראלי",
+  appleWebApp: {
+    capable: true,
+    title: "קלורית",
+    statusBarStyle: "default",
+  },
+  icons: {
+    icon: "/icon.png",
+    apple: "/apple-icon.png",
+  },
 };
 
 export default function RootLayout({
