@@ -255,6 +255,7 @@ button { cursor: pointer; }
 .today-meta .big small { font-size: 0.9rem; font-weight: 700; color: var(--muted); }
 .today-remaining { color: var(--muted); font-size: 0.9rem; }
 .today-card.over .today-remaining { color: var(--danger-ink); font-weight: 700; }
+.today-breakdown { color: var(--faint); font-size: 0.78rem; }
 .today-goal {
   justify-self: start;
   margin-top: 4px;
@@ -340,8 +341,12 @@ button { cursor: pointer; }
 .health-strip small { color: var(--faint); font-size: 0.78rem; }
 .health-strip strong { font-size: 1.5rem; font-weight: 800; color: var(--ink); }
 
+.workout-footer,
 .weight-footer {
   margin-top: 16px;
+}
+
+.weight-footer {
   margin-bottom: 0;
 }
 
@@ -743,6 +748,7 @@ input::placeholder { color: var(--faint); }
 }
 .week-total strong { font-size: 2.1rem; font-weight: 800; color: var(--brand-ink); }
 .week-total span { color: var(--muted); }
+.week-total small { color: var(--muted); }
 
 .week-bars { display: grid; gap: 10px; }
 .week-bars > div { display: grid; grid-template-columns: 54px minmax(0, 1fr) 68px; gap: 10px; align-items: center; }

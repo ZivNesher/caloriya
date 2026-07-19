@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BarcodeFormat, BrowserMultiFormatOneDReader, type IScannerControls } from "@zxing/browser";
-import { DecodeHintType } from "@zxing/library";
+import { ChecksumException, DecodeHintType, FormatException, NotFoundException } from "@zxing/library";
 import { products, type Product } from "@/data/products";
 import {
   defaultProfile,
@@ -25,7 +25,9 @@ type Entry = {
   createdAt: string;
 };
 
-type DayLog = Record<MealKey, Entry[]>;
+type DayLog = Record<MealKey, Entry[]> & {
+  workoutCalories?: number;
+};
 type Logs = Record<string, DayLog>;
 
 const mealLabels: Record<MealKey, string> = {
@@ -134,6 +136,7 @@ const emptyDay = (): DayLog => ({
   dinner: [],
   night: [],
   snacks: [],
+  workoutCalories: 0,
 });
 
 const toDateKey = (date: Date) => {
@@ -265,6 +268,19 @@ const waitForVideoElement = async (getElement: () => HTMLVideoElement | null) =>
 
 // 720p decodes EAN-13 reliably and locks focus faster than 1080p on iPhones,
 // where forcing a high resolution noticeably delays the first autofocus.
+// zxing sizes its capture canvas from the video and decodes immediately. Safari
+// can report 0x0 for a moment after play() resolves, and drawing that throws a
+// non-zxing error, which the scan loop treats as fatal - it tears the stream
+// down and leaves a blank preview. So hold off until real dimensions exist.
+const waitForVideoReady = async (video: HTMLVideoElement) => {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    if (video.videoWidth > 0 && video.videoHeight > 0) return true;
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+  }
+
+  return false;
+};
+
 const videoConstraintsFor = (deviceId?: string): MediaTrackConstraints => ({
   ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: "environment" } }),
   width: { ideal: 1280 },
@@ -568,6 +584,14 @@ function totalCalories(day: DayLog) {
   );
 }
 
+function workoutCalories(day: DayLog) {
+  return clampNumber(day.workoutCalories, 0, 0, 5000);
+}
+
+function netCalories(day: DayLog) {
+  return totalCalories(day) - workoutCalories(day);
+}
+
 function weekKeys(selectedDate: string) {
   const base = fromDateKey(selectedDate);
   const day = base.getDay();
@@ -649,15 +673,18 @@ export function CalorieApp() {
 
   const day = logs[selectedDate] ?? emptyDay();
   const weeks = useMemo(() => weekKeys(selectedDate), [selectedDate]);
-  const dailyTotal = totalCalories(day);
+  const foodTotal = totalCalories(day);
+  const burnedToday = workoutCalories(day);
+  const dailyTotal = netCalories(day);
+  const displayDailyTotal = Math.max(0, dailyTotal);
   const currentWeight = getCurrentWeight(weights, selectedDate, profile.targetWeightKg);
   const bmi = calculateBmi(currentWeight, profile.heightCm);
   const goal = calculateDailyTarget(profile, currentWeight);
-  const percentOfGoal = goal > 0 ? Math.round((dailyTotal / goal) * 100) : 0;
+  const percentOfGoal = goal > 0 ? Math.round((displayDailyTotal / goal) * 100) : 0;
   const ringCircumference = 2 * Math.PI * 58;
-  const ringOffset = ringCircumference * (1 - Math.min(1, goal > 0 ? dailyTotal / goal : 0));
+  const ringOffset = ringCircumference * (1 - Math.min(1, goal > 0 ? displayDailyTotal / goal : 0));
   const over = dailyTotal > goal;
-  const remaining = Math.max(0, goal - dailyTotal);
+  const remaining = Math.max(0, goal - displayDailyTotal);
   const macroTargets = {
     protein: Math.max(1, Math.round((goal * 0.3) / 4)),
     carbs: Math.max(1, Math.round((goal * 0.4) / 4)),
@@ -665,7 +692,9 @@ export function CalorieApp() {
   };
   const allEntries = useMemo(() => mealOrder.flatMap((meal) => day[meal]), [day]);
   const entryCount = allEntries.length;
-  const weeklyTotal = weeks.reduce((sum, dateKey) => sum + totalCalories(logs[dateKey] ?? emptyDay()), 0);
+  const weeklyFoodTotal = weeks.reduce((sum, dateKey) => sum + totalCalories(logs[dateKey] ?? emptyDay()), 0);
+  const weeklyBurnedTotal = weeks.reduce((sum, dateKey) => sum + workoutCalories(logs[dateKey] ?? emptyDay()), 0);
+  const weeklyTotal = weeklyFoodTotal - weeklyBurnedTotal;
   const weeklyGoal = goal * 7;
   const unitOptions = selectedProduct ? getUnitOptions(selectedProduct) : gramUnits;
   const selectedUnit = unitOptions.find((unit) => unit.id === selectedUnitId) ?? unitOptions[0];
@@ -809,6 +838,21 @@ export function CalorieApp() {
     });
   };
 
+  const updateWorkoutCalories = (value: string) => {
+    updateDay((current) => {
+      const next = { ...current };
+      if (value.trim() === "") {
+        next.workoutCalories = 0;
+        return next;
+      }
+
+      const numericValue = parseUserNumber(value);
+      if (!Number.isFinite(numericValue) || numericValue < 0 || numericValue > 5000) return current;
+      next.workoutCalories = Math.round(numericValue);
+      return next;
+    });
+  };
+
   const updateProfileText = (field: "name", value: string) => {
     setProfile((current) => sanitizeProfile({ ...current, [field]: value }));
   };
@@ -852,6 +896,8 @@ export function CalorieApp() {
     scannerControlsRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
+    // We attach the stream ourselves now, so we also have to detach it.
+    if (videoRef.current) videoRef.current.srcObject = null;
     setScanning(false);
     setTorchOn(false);
     setTorchAvailable(false);
@@ -954,17 +1000,59 @@ export function CalorieApp() {
 
       streamRef.current = stream;
 
+      // Attach and play here so the frame size is known before decoding starts.
+      videoElement.srcObject = stream;
+      videoElement.muted = true;
+      videoElement.setAttribute("playsinline", "true");
+
+      try {
+        await videoElement.play();
+      } catch {
+        // Safari can reject a redundant play(); the readiness check below is
+        // what actually decides whether we can decode.
+      }
+
+      if (!(await waitForVideoReady(videoElement))) {
+        setCameraStatus("המצלמה נפתחה אבל לא הגיעה תמונה. נסה לסגור אפליקציות מצלמה אחרות ולנסות שוב.");
+        stopScanner();
+        return;
+      }
+
       const reader = new BrowserMultiFormatOneDReader(scannerHints, {
         delayBetweenScanAttempts: 100,
         delayBetweenScanSuccess: 500,
         tryPlayVideoTimeout: 8000,
       });
-      const controls = await reader.decodeFromStream(stream, videoElement, (result) => {
-        const value = result?.getText();
-        if (!value) return;
-        stopScanner();
-        setBarcode(value);
-        void lookupBarcode(value);
+
+      // decodeFromVideoElement scans an element we own and registers no
+      // finalize callback, so a fatal decode error can no longer dispose the
+      // stream and blank the preview the way decodeFromStream did.
+      const controls = await reader.decodeFromVideoElement(videoElement, (result, error) => {
+        if (result) {
+          const value = result.getText();
+          if (!value) return;
+          stopScanner();
+          setBarcode(value);
+          void lookupBarcode(value);
+          return;
+        }
+
+        if (!error) return;
+
+        // Thrown for every frame that has no readable barcode - the idle path.
+        if (
+          error instanceof NotFoundException ||
+          error instanceof ChecksumException ||
+          error instanceof FormatException
+        ) {
+          return;
+        }
+
+        // Anything else ends zxing's loop, so report it rather than leaving a
+        // preview that silently stopped scanning.
+        setCameraStatus(
+          `הסריקה נעצרה (${(error as Error).name || "שגיאה"}). לחץ "סרוק" כדי לנסות שוב.`,
+        );
       });
 
       scannerControlsRef.current = controls;
@@ -1021,7 +1109,7 @@ export function CalorieApp() {
           type="button"
           className={over ? "today-card over" : "today-card"}
           onClick={() => setShowWeekSummary(true)}
-          aria-label={`סה"כ ${dailyTotal} קלוריות מתוך יעד ${goal}. לצפייה בסיכום שבועי`}
+          aria-label={`נטו ${displayDailyTotal} קלוריות מתוך יעד ${goal}. לצפייה בסיכום שבועי`}
         >
           <div className="ring">
             <svg viewBox="0 0 128 128" aria-hidden="true">
@@ -1037,19 +1125,22 @@ export function CalorieApp() {
               />
             </svg>
             <div className="ring-center">
-              <b>{dailyTotal.toLocaleString("he-IL")}</b>
+              <b>{displayDailyTotal.toLocaleString("he-IL")}</b>
               <span>{percentOfGoal}% מהיעד</span>
             </div>
           </div>
           <div className="today-meta">
-            <span className="today-label">סה"כ קלוריות היום</span>
+            <span className="today-label">נטו קלוריות היום</span>
             <strong className="big">
-              {dailyTotal.toLocaleString("he-IL")} <small>קק"ל</small>
+              {displayDailyTotal.toLocaleString("he-IL")} <small>קק"ל</small>
             </strong>
             <small className="today-remaining">
               {over
                 ? `עברת את היעד ב-${(dailyTotal - goal).toLocaleString("he-IL")} קק"ל`
                 : `נשארו ${remaining.toLocaleString("he-IL")} קק"ל`}
+            </small>
+            <small className="today-breakdown">
+              אוכל {foodTotal.toLocaleString("he-IL")} · אימון {burnedToday.toLocaleString("he-IL")}-
             </small>
             <span className="today-goal">יעד יומי {goal.toLocaleString("he-IL")}</span>
           </div>
@@ -1063,7 +1154,7 @@ export function CalorieApp() {
         <div className="days">
           {weeks.map((dateKey) => {
             const date = fromDateKey(dateKey);
-            const total = totalCalories(logs[dateKey] ?? emptyDay());
+            const total = Math.max(0, netCalories(logs[dateKey] ?? emptyDay()));
             return (
               <button
                 key={dateKey}
@@ -1106,12 +1197,13 @@ export function CalorieApp() {
             <button type="button" onClick={() => setShowWeekSummary(false)}>×</button>
           </div>
           <div className="week-total">
-            <strong>{weeklyTotal.toLocaleString("he-IL")}</strong>
+            <strong>{Math.max(0, weeklyTotal).toLocaleString("he-IL")}</strong>
             <span>מתוך {weeklyGoal.toLocaleString("he-IL")} קק"ל</span>
+            <small>אוכל {weeklyFoodTotal.toLocaleString("he-IL")} · אימונים {weeklyBurnedTotal.toLocaleString("he-IL")}-</small>
           </div>
           <div className="week-bars">
             {weeks.map((dateKey) => {
-              const total = totalCalories(logs[dateKey] ?? emptyDay());
+              const total = Math.max(0, netCalories(logs[dateKey] ?? emptyDay()));
               return (
                 <div key={dateKey}>
                   <span>{new Intl.DateTimeFormat("he-IL", { weekday: "short" }).format(fromDateKey(dateKey))}</span>
@@ -1530,6 +1622,28 @@ export function CalorieApp() {
             ) : null}
           </div>
         </aside>
+      </section>
+
+      <section className="health-strip workout-footer" aria-label="קלוריות אימון יומיות">
+        <label>
+          קלוריות שנשרפו באימון
+          <input
+            type="number"
+            min="0"
+            step="1"
+            value={burnedToday || ""}
+            placeholder="לדוגמה: 350"
+            onChange={(event) => updateWorkoutCalories(event.target.value)}
+            onInput={(event) => updateWorkoutCalories(event.currentTarget.value)}
+          />
+        </label>
+        <div>
+          <span>חישוב נטו</span>
+          <strong>{displayDailyTotal.toLocaleString("he-IL")}</strong>
+          <small>
+            {foodTotal.toLocaleString("he-IL")} אוכל פחות {burnedToday.toLocaleString("he-IL")} אימון
+          </small>
+        </div>
       </section>
 
       <section className="health-strip weight-footer" aria-label="משקל יומי">
