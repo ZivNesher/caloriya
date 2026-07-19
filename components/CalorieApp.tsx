@@ -1069,19 +1069,7 @@ export function CalorieApp() {
         </button>
       </section>
 
-      <section className="health-strip" aria-label="משקל ויעד">
-        <label>
-          משקל היום
-          <input
-            type="number"
-            min="20"
-            step="0.1"
-            value={weights[selectedDate] ?? ""}
-            placeholder={`${currentWeight || ""}`}
-            onChange={(event) => updateTodayWeight(event.target.value)}
-            onInput={(event) => updateTodayWeight(event.currentTarget.value)}
-          />
-        </label>
+      <section className="health-strip" aria-label="מדדי יעד">
         <div>
           <span>BMI</span>
           <strong>{bmi ? bmi.toFixed(1) : "-"}</strong>
@@ -1528,6 +1516,26 @@ export function CalorieApp() {
             ) : null}
           </div>
         </aside>
+      </section>
+
+      <section className="health-strip weight-footer" aria-label="משקל יומי">
+        <label>
+          משקל היום
+          <input
+            type="number"
+            min="20"
+            step="0.1"
+            value={weights[selectedDate] ?? ""}
+            placeholder={`${currentWeight || ""}`}
+            onChange={(event) => updateTodayWeight(event.target.value)}
+            onInput={(event) => updateTodayWeight(event.currentTarget.value)}
+          />
+        </label>
+        <div>
+          <span>תאריך</span>
+          <strong>{new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "short" }).format(fromDateKey(selectedDate))}</strong>
+          <small>נשמר אוטומטית ליומן של היום הזה</small>
+        </div>
       </section>
     </main>
   );

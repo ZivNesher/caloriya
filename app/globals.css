@@ -322,7 +322,7 @@ button { cursor: pointer; }
 /* ---- health strip --------------------------------------------------------- */
 .health-strip {
   display: grid;
-  grid-template-columns: minmax(190px, 0.9fr) repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -339,6 +339,11 @@ button { cursor: pointer; }
 .health-strip span { color: var(--muted); font-size: 0.82rem; font-weight: 700; }
 .health-strip small { color: var(--faint); font-size: 0.78rem; }
 .health-strip strong { font-size: 1.5rem; font-weight: 800; color: var(--ink); }
+
+.weight-footer {
+  margin-top: 16px;
+  margin-bottom: 0;
+}
 
 /* ---- panels --------------------------------------------------------------- */
 .dashboard {
