@@ -281,11 +281,17 @@ const waitForVideoReady = async (video: HTMLVideoElement) => {
   return false;
 };
 
+// 720p is plenty - decoding stays reliable down to a few pixels per bar - and a
+// smaller frame decodes faster, which matters more: the limiting factor is
+// catching a frame while autofocus is sharp, so attempts per second wins.
 const videoConstraintsFor = (deviceId?: string): MediaTrackConstraints => ({
   ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: "environment" } }),
   width: { ideal: 1280 },
   height: { ideal: 720 },
 });
+
+// Fallback region only, tried after the full frame: roughly the guide box.
+const scanCropRatio = { width: 0.85, height: 0.5 };
 
 // iPhones expose several rear lenses. facingMode "environment" may hand back the
 // ultra-wide or a virtual multi-camera device, and neither holds focus at the
@@ -659,6 +665,7 @@ export function CalorieApp() {
   const [barcodeStatus, setBarcodeStatus] = useState("");
   const [cameraStatus, setCameraStatus] = useState("");
   const [scanning, setScanning] = useState(false);
+  const [scanAttempts, setScanAttempts] = useState(0);
   const [torchOn, setTorchOn] = useState(false);
   const [torchAvailable, setTorchAvailable] = useState(false);
   const [lastScannedProduct, setLastScannedProduct] = useState<Product | null>(null);
@@ -670,6 +677,9 @@ export function CalorieApp() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scannerControlsRef = useRef<IScannerControls | null>(null);
+  const scanTimeoutRef = useRef<number | null>(null);
+  const scanningActiveRef = useRef(false);
+  const scanAttemptsRef = useRef(0);
 
   const day = logs[selectedDate] ?? emptyDay();
   const weeks = useMemo(() => weekKeys(selectedDate), [selectedDate]);
@@ -892,6 +902,11 @@ export function CalorieApp() {
   };
 
   const stopScanner = () => {
+    scanningActiveRef.current = false;
+    if (scanTimeoutRef.current !== null) {
+      window.clearTimeout(scanTimeoutRef.current);
+      scanTimeoutRef.current = null;
+    }
     scannerControlsRef.current?.stop();
     scannerControlsRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -958,6 +973,7 @@ export function CalorieApp() {
 
     stopScanner();
     setScanning(true);
+    setScanAttempts(0);
     setCameraStatus("פותח מצלמה...");
 
     let stream: MediaStream | null = null;
@@ -1018,53 +1034,106 @@ export function CalorieApp() {
         return;
       }
 
-      const reader = new BrowserMultiFormatOneDReader(scannerHints, {
-        delayBetweenScanAttempts: 100,
-        delayBetweenScanSuccess: 500,
-        tryPlayVideoTimeout: 8000,
-      });
+      const reader = new BrowserMultiFormatOneDReader(scannerHints);
 
-      // decodeFromVideoElement scans an element we own and registers no
-      // finalize callback, so a fatal decode error can no longer dispose the
-      // stream and blank the preview the way decodeFromStream did.
-      const controls = await reader.decodeFromVideoElement(videoElement, (result, error) => {
-        if (result) {
-          const value = result.getText();
-          if (!value) return;
-          stopScanner();
-          setBarcode(value);
-          void lookupBarcode(value);
-          return;
+      // zxing's own video loop decodes the whole frame, so a barcode that fills
+      // the on-screen guide is still only a small slice of a 1080p image and
+      // rarely carries enough pixels per bar. Drive the loop here instead and
+      // decode just the guide region, which multiplies the pixels on the bars.
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+
+      if (!context) {
+        setCameraStatus("הדפדפן לא אפשר עיבוד תמונה. אפשר להקליד את הברקוד ידנית.");
+        stopScanner();
+        return;
+      }
+
+      scanAttemptsRef.current = 0;
+      scanningActiveRef.current = true;
+
+      const isMiss = (error: unknown) =>
+        error instanceof NotFoundException ||
+        error instanceof ChecksumException ||
+        error instanceof FormatException;
+
+      // Returns the decoded text, or null on a miss. Rethrows anything that is
+      // not a normal "no barcode in this region" result.
+      const decodeRegion = (sx: number, sy: number, sw: number, sh: number) => {
+        if (canvas.width !== sw || canvas.height !== sh) {
+          canvas.width = sw;
+          canvas.height = sh;
         }
 
-        if (!error) return;
+        context.drawImage(videoElement, sx, sy, sw, sh, 0, 0, sw, sh);
 
-        // Thrown for every frame that has no readable barcode - the idle path.
-        if (
-          error instanceof NotFoundException ||
-          error instanceof ChecksumException ||
-          error instanceof FormatException
-        ) {
-          return;
+        try {
+          return reader.decodeFromCanvas(canvas)?.getText() ?? null;
+        } catch (error) {
+          if (isMiss(error)) return null;
+          throw error;
+        }
+      };
+
+      const tick = () => {
+        if (!scanningActiveRef.current) return;
+
+        const width = videoElement.videoWidth;
+        const height = videoElement.videoHeight;
+
+        if (width > 0 && height > 0) {
+          try {
+            // Full frame first: it decodes down to a few pixels per bar, and
+            // cropping first would clip a barcode that fills the guide.
+            let value = decodeRegion(0, 0, width, height);
+
+            if (!value) {
+              // Fallback for a busy background: retry the middle band only.
+              const cropWidth = Math.round(width * scanCropRatio.width);
+              const cropHeight = Math.round(height * scanCropRatio.height);
+              value = decodeRegion(
+                Math.round((width - cropWidth) / 2),
+                Math.round((height - cropHeight) / 2),
+                cropWidth,
+                cropHeight,
+              );
+            }
+
+            if (value) {
+              stopScanner();
+              setBarcode(value);
+              void lookupBarcode(value);
+              return;
+            }
+          } catch (error) {
+            setCameraStatus(
+              `הסריקה נעצרה (${(error as Error)?.name || "שגיאה"}). לחץ "סרוק" כדי לנסות שוב.`,
+            );
+            stopScanner();
+            return;
+          }
+
+          scanAttemptsRef.current += 1;
+          // Surfacing the count confirms the loop is alive without re-rendering
+          // on every frame.
+          if (scanAttemptsRef.current % 10 === 0) setScanAttempts(scanAttemptsRef.current);
         }
 
-        // Anything else ends zxing's loop, so report it rather than leaving a
-        // preview that silently stopped scanning.
-        setCameraStatus(
-          `הסריקה נעצרה (${(error as Error).name || "שגיאה"}). לחץ "סרוק" כדי לנסות שוב.`,
-        );
-      });
+        scanTimeoutRef.current = window.setTimeout(tick, 120);
+      };
 
-      scannerControlsRef.current = controls;
+      tick();
 
       const track = stream.getVideoTracks()[0];
       const capabilities = track?.getCapabilities?.() as
         | (MediaTrackCapabilities & { torch?: boolean })
         | undefined;
-      setTorchAvailable(Boolean(capabilities?.torch) || Boolean(controls.switchTorch));
+      setTorchAvailable(Boolean(capabilities?.torch));
       if (track) void applyFocusConstraints(track);
 
-      setCameraStatus("כוון את המצלמה לברקוד, במרחק 10-20 ס״מ.");
+      // Deliberately not "fill the frame": a barcode with no blank margin has no
+      // quiet zone and never decodes, however sharp it is.
+      setCameraStatus("קרב עד שהברקוד תופס את רוב רוחב המסגרת, אבל השאר שוליים ריקים משני הצדדים.");
     } catch (error) {
       stream?.getTracks().forEach((track) => track.stop());
       const errorName = (error as { name?: string } | null)?.name;
@@ -1424,6 +1493,9 @@ export function CalorieApp() {
                 <video ref={videoRef} className="scanner" muted playsInline autoPlay />
                 <div className="scanner-guide" aria-hidden="true">
                   <span />
+                </div>
+                <div className="scanner-counter" aria-hidden="true">
+                  {scanAttempts ? `נסיונות פענוח: ${scanAttempts}` : "מתחיל לסרוק..."}
                 </div>
                 <div className="scanner-tools">
                   <button type="button" onClick={improveCameraFocus}>
