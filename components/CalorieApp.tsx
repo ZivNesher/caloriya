@@ -666,6 +666,7 @@ export function CalorieApp() {
   const [cameraStatus, setCameraStatus] = useState("");
   const [scanning, setScanning] = useState(false);
   const [scanAttempts, setScanAttempts] = useState(0);
+  const [scanIssue, setScanIssue] = useState<string | null>(null);
   const [torchOn, setTorchOn] = useState(false);
   const [torchAvailable, setTorchAvailable] = useState(false);
   const [lastScannedProduct, setLastScannedProduct] = useState<Product | null>(null);
@@ -680,6 +681,7 @@ export function CalorieApp() {
   const scanTimeoutRef = useRef<number | null>(null);
   const scanningActiveRef = useRef(false);
   const scanAttemptsRef = useRef(0);
+  const lastDecodeErrorRef = useRef<string | null>(null);
 
   const day = logs[selectedDate] ?? emptyDay();
   const weeks = useMemo(() => weekKeys(selectedDate), [selectedDate]);
@@ -974,6 +976,8 @@ export function CalorieApp() {
     stopScanner();
     setScanning(true);
     setScanAttempts(0);
+    setScanIssue(null);
+    lastDecodeErrorRef.current = null;
     setCameraStatus("פותח מצלמה...");
 
     let stream: MediaStream | null = null;
@@ -1052,26 +1056,27 @@ export function CalorieApp() {
       scanAttemptsRef.current = 0;
       scanningActiveRef.current = true;
 
+      const missNames = new Set(["NotFoundException", "ChecksumException", "FormatException"]);
       const isMiss = (error: unknown) =>
         error instanceof NotFoundException ||
         error instanceof ChecksumException ||
-        error instanceof FormatException;
+        error instanceof FormatException ||
+        missNames.has((error as Error)?.name);
 
-      // Returns the decoded text, or null on a miss. Rethrows anything that is
-      // not a normal "no barcode in this region" result.
+      // Always returns text or null, and never throws. A bad frame must not be
+      // able to shut the camera down - that is what kept killing the scanner.
       const decodeRegion = (sx: number, sy: number, sw: number, sh: number) => {
-        if (canvas.width !== sw || canvas.height !== sh) {
-          canvas.width = sw;
-          canvas.height = sh;
-        }
-
-        context.drawImage(videoElement, sx, sy, sw, sh, 0, 0, sw, sh);
-
         try {
+          if (canvas.width !== sw || canvas.height !== sh) {
+            canvas.width = sw;
+            canvas.height = sh;
+          }
+
+          context.drawImage(videoElement, sx, sy, sw, sh, 0, 0, sw, sh);
           return reader.decodeFromCanvas(canvas)?.getText() ?? null;
         } catch (error) {
-          if (isMiss(error)) return null;
-          throw error;
+          if (!isMiss(error)) lastDecodeErrorRef.current = (error as Error)?.name || "שגיאה";
+          return null;
         }
       };
 
@@ -1082,41 +1087,36 @@ export function CalorieApp() {
         const height = videoElement.videoHeight;
 
         if (width > 0 && height > 0) {
-          try {
-            // Full frame first: it decodes down to a few pixels per bar, and
-            // cropping first would clip a barcode that fills the guide.
-            let value = decodeRegion(0, 0, width, height);
+          // Full frame first: it decodes down to a few pixels per bar, and
+          // cropping first would clip a barcode that fills the guide.
+          let value = decodeRegion(0, 0, width, height);
 
-            if (!value) {
-              // Fallback for a busy background: retry the middle band only.
-              const cropWidth = Math.round(width * scanCropRatio.width);
-              const cropHeight = Math.round(height * scanCropRatio.height);
-              value = decodeRegion(
-                Math.round((width - cropWidth) / 2),
-                Math.round((height - cropHeight) / 2),
-                cropWidth,
-                cropHeight,
-              );
-            }
-
-            if (value) {
-              stopScanner();
-              setBarcode(value);
-              void lookupBarcode(value);
-              return;
-            }
-          } catch (error) {
-            setCameraStatus(
-              `הסריקה נעצרה (${(error as Error)?.name || "שגיאה"}). לחץ "סרוק" כדי לנסות שוב.`,
+          if (!value) {
+            // Fallback for a busy background: retry the middle band only.
+            const cropWidth = Math.round(width * scanCropRatio.width);
+            const cropHeight = Math.round(height * scanCropRatio.height);
+            value = decodeRegion(
+              Math.round((width - cropWidth) / 2),
+              Math.round((height - cropHeight) / 2),
+              cropWidth,
+              cropHeight,
             );
+          }
+
+          if (value) {
             stopScanner();
+            setBarcode(value);
+            void lookupBarcode(value);
             return;
           }
 
           scanAttemptsRef.current += 1;
           // Surfacing the count confirms the loop is alive without re-rendering
           // on every frame.
-          if (scanAttemptsRef.current % 10 === 0) setScanAttempts(scanAttemptsRef.current);
+          if (scanAttemptsRef.current % 10 === 0) {
+            setScanAttempts(scanAttemptsRef.current);
+            setScanIssue(lastDecodeErrorRef.current);
+          }
         }
 
         scanTimeoutRef.current = window.setTimeout(tick, 120);
@@ -1496,6 +1496,7 @@ export function CalorieApp() {
                 </div>
                 <div className="scanner-counter" aria-hidden="true">
                   {scanAttempts ? `נסיונות פענוח: ${scanAttempts}` : "מתחיל לסרוק..."}
+                  {scanIssue ? ` · ${scanIssue}` : ""}
                 </div>
                 <div className="scanner-tools">
                   <button type="button" onClick={improveCameraFocus}>
