@@ -263,11 +263,57 @@ const waitForVideoElement = async (getElement: () => HTMLVideoElement | null) =>
   return null;
 };
 
-const backCameraConstraints: MediaTrackConstraints = {
-  facingMode: { ideal: "environment" },
-  width: { ideal: 1920 },
-  height: { ideal: 1080 },
-  frameRate: { ideal: 30 },
+// 720p decodes EAN-13 reliably and locks focus faster than 1080p on iPhones,
+// where forcing a high resolution noticeably delays the first autofocus.
+const videoConstraintsFor = (deviceId?: string): MediaTrackConstraints => ({
+  ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: "environment" } }),
+  width: { ideal: 1280 },
+  height: { ideal: 720 },
+});
+
+// iPhones expose several rear lenses. facingMode "environment" may hand back the
+// ultra-wide or a virtual multi-camera device, and neither holds focus at the
+// 10-20cm a barcode needs - the preview looks sharp but nothing ever decodes.
+// Pin the plain wide "Back Camera" instead.
+const pickRearCameraId = async () => {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cameras = devices.filter((device) => device.kind === "videoinput");
+    if (!cameras.length) return undefined;
+
+    const labelOf = (device: MediaDeviceInfo) => device.label.toLowerCase();
+    const rear = cameras.filter((device) => /back|rear|environment|אחורית/.test(labelOf(device)));
+    const pool = rear.length ? rear : cameras;
+
+    const chosen =
+      pool.find((device) => /back camera|מצלמה אחורית/.test(labelOf(device))) ??
+      pool.find((device) => !/ultra|tele|depth|front/.test(labelOf(device))) ??
+      pool[pool.length - 1];
+
+    return chosen?.deviceId;
+  } catch {
+    return undefined;
+  }
+};
+
+// Unsupported keys inside `advanced` are meant to be ignored rather than reject,
+// but Safari rejects on some versions - so this must be awaited, not wrapped in
+// a synchronous try/catch.
+const applyFocusConstraints = async (track: MediaStreamTrack) => {
+  try {
+    await track.applyConstraints({
+      advanced: [
+        {
+          focusMode: "continuous",
+          exposureMode: "continuous",
+          whiteBalanceMode: "continuous",
+        } as MediaTrackConstraintSet,
+      ],
+    });
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 const scannerHints = new Map<DecodeHintType, unknown>([
@@ -805,29 +851,34 @@ export function CalorieApp() {
     setTorchAvailable(false);
   };
 
-  const improveCameraFocus = () => {
-    const controls = scannerControlsRef.current;
+  const improveCameraFocus = async () => {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (!track) return;
 
-    try {
-      controls?.streamVideoConstraintsApply?.(
-        {
-          advanced: [
-            {
-              focusMode: "continuous",
-              exposureMode: "continuous",
-              whiteBalanceMode: "continuous",
-              zoom: 2,
-            } as MediaTrackConstraintSet,
-          ],
-        },
-      );
-      setCameraStatus("כוון את הברקוד בתוך המסגרת, במרחק 10-20 ס״מ, והחזק יציב.");
-    } catch {
-      setCameraStatus("הדפדפן לא נתן שליטה בפוקוס. נסה להרחיק/לקרב מעט ולהחזיק יציב.");
-    }
+    const applied = await applyFocusConstraints(track);
+    setCameraStatus(
+      applied
+        ? "כוון את הברקוד בתוך המסגרת, במרחק 10-20 ס״מ, והחזק יציב."
+        : "הדפדפן לא נתן שליטה בפוקוס. נסה להרחיק/לקרב מעט ולהחזיק יציב.",
+    );
   };
 
   const toggleTorch = async () => {
+    const next = !torchOn;
+    const track = streamRef.current?.getVideoTracks()[0];
+
+    // Driving the track directly is more reliable than zxing's experimental
+    // switchTorch, which is only kept as a fallback.
+    if (track) {
+      try {
+        await track.applyConstraints({ advanced: [{ torch: next } as MediaTrackConstraintSet] });
+        setTorchOn(next);
+        return;
+      } catch {
+        // fall through to the zxing fallback below
+      }
+    }
+
     const controls = scannerControlsRef.current;
     if (!controls?.switchTorch) {
       setCameraStatus("פנס לא נתמך בדפדפן הזה. נסה תאורה חזקה יותר סביב הברקוד.");
@@ -835,8 +886,8 @@ export function CalorieApp() {
     }
 
     try {
-      await controls.switchTorch(!torchOn);
-      setTorchOn((value) => !value);
+      await controls.switchTorch(next);
+      setTorchOn(next);
     } catch {
       setCameraStatus("לא הצלחנו להפעיל פנס דרך הדפדפן. נסה להאיר את הברקוד מבחוץ.");
     }
@@ -848,9 +899,16 @@ export function CalorieApp() {
       return;
     }
 
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraStatus("הדפדפן הזה לא תומך בפתיחת מצלמה. אפשר להקליד את הברקוד ידנית.");
+      return;
+    }
+
     stopScanner();
     setScanning(true);
     setCameraStatus("פותח מצלמה...");
+
+    let stream: MediaStream | null = null;
 
     try {
       const videoElement = await waitForVideoElement(() => videoRef.current);
@@ -861,29 +919,63 @@ export function CalorieApp() {
         return;
       }
 
-      const reader = new BrowserMultiFormatOneDReader(scannerHints, {
-        delayBetweenScanAttempts: 80,
-        delayBetweenScanSuccess: 400,
-        tryPlayVideoTimeout: 5000,
+      // Opening the camera here (rather than letting zxing do it) keeps
+      // getUserMedia inside the tap that started the scan, which Safari needs,
+      // and lets us pick the lens instead of leaving it to the browser.
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: videoConstraintsFor(),
+        audio: false,
       });
-      const controls = await reader.decodeFromConstraints(
-        { video: backCameraConstraints },
-        videoElement,
-        (result) => {
-          const value = result?.getText();
-          if (!value) return;
-          stopScanner();
-          setBarcode(value);
-          void lookupBarcode(value);
-        },
-      );
+
+      // Device labels only become readable once permission is granted, so the
+      // lens can only be chosen after this first open.
+      const rearId = await pickRearCameraId();
+      const activeId = stream.getVideoTracks()[0]?.getSettings().deviceId;
+
+      if (rearId && rearId !== activeId) {
+        stream.getTracks().forEach((track) => track.stop());
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: videoConstraintsFor(rearId),
+          audio: false,
+        });
+      }
+
+      streamRef.current = stream;
+
+      const reader = new BrowserMultiFormatOneDReader(scannerHints, {
+        delayBetweenScanAttempts: 100,
+        delayBetweenScanSuccess: 500,
+        tryPlayVideoTimeout: 8000,
+      });
+      const controls = await reader.decodeFromStream(stream, videoElement, (result) => {
+        const value = result?.getText();
+        if (!value) return;
+        stopScanner();
+        setBarcode(value);
+        void lookupBarcode(value);
+      });
 
       scannerControlsRef.current = controls;
-      setTorchAvailable(Boolean(controls.switchTorch));
-      window.setTimeout(improveCameraFocus, 450);
-      setCameraStatus("כוון את המצלמה לברקוד.");
-    } catch {
-      setCameraStatus("לא קיבלנו גישה למצלמה. ודא שהאתר פתוח ב-HTTPS ושאישרת הרשאת מצלמה בספארי.");
+
+      const track = stream.getVideoTracks()[0];
+      const capabilities = track?.getCapabilities?.() as
+        | (MediaTrackCapabilities & { torch?: boolean })
+        | undefined;
+      setTorchAvailable(Boolean(capabilities?.torch) || Boolean(controls.switchTorch));
+      if (track) void applyFocusConstraints(track);
+
+      setCameraStatus("כוון את המצלמה לברקוד, במרחק 10-20 ס״מ.");
+    } catch (error) {
+      stream?.getTracks().forEach((track) => track.stop());
+      const errorName = (error as { name?: string } | null)?.name;
+
+      setCameraStatus(
+        errorName === "NotAllowedError"
+          ? "הרשאת מצלמה נדחתה. בספארי: הגדרות האתר ← מצלמה ← אפשר, ואז נסה שוב."
+          : errorName === "NotFoundError"
+            ? "לא נמצאה מצלמה במכשיר הזה. אפשר להקליד את הברקוד ידנית."
+            : "לא הצלחנו לפתוח את המצלמה. ודא שהאתר פתוח ב-HTTPS ושאישרת הרשאת מצלמה בספארי.",
+      );
       stopScanner();
     }
   };
