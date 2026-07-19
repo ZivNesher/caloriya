@@ -601,8 +601,16 @@ export function CalorieApp() {
   const currentWeight = getCurrentWeight(weights, selectedDate, profile.targetWeightKg);
   const bmi = calculateBmi(currentWeight, profile.heightCm);
   const goal = calculateDailyTarget(profile, currentWeight);
-  const progress = Math.min(100, Math.round((dailyTotal / goal) * 100));
+  const percentOfGoal = goal > 0 ? Math.round((dailyTotal / goal) * 100) : 0;
+  const ringCircumference = 2 * Math.PI * 58;
+  const ringOffset = ringCircumference * (1 - Math.min(1, goal > 0 ? dailyTotal / goal : 0));
+  const over = dailyTotal > goal;
   const remaining = Math.max(0, goal - dailyTotal);
+  const macroTargets = {
+    protein: Math.max(1, Math.round((goal * 0.3) / 4)),
+    carbs: Math.max(1, Math.round((goal * 0.4) / 4)),
+    fat: Math.max(1, Math.round((goal * 0.3) / 9)),
+  };
   const allEntries = useMemo(() => mealOrder.flatMap((meal) => day[meal]), [day]);
   const entryCount = allEntries.length;
   const weeklyTotal = weeks.reduce((sum, dateKey) => sum + totalCalories(logs[dateKey] ?? emptyDay()), 0);
@@ -903,12 +911,41 @@ export function CalorieApp() {
             </button>
           </div>
         </div>
-        <button type="button" className="today-card" onClick={() => setShowWeekSummary(true)}>
-          <span>סה"כ היום</span>
-          <strong>{dailyTotal.toLocaleString("he-IL")}</strong>
-          <small>{remaining ? `נשארו ${remaining.toLocaleString("he-IL")} מתוך ${goal.toLocaleString("he-IL")}` : "עברת את היעד היומי"}</small>
-          <div className="progress" aria-label={`התקדמות ${progress}%`}>
-            <span style={{ width: `${progress}%` }} />
+        <button
+          type="button"
+          className={over ? "today-card over" : "today-card"}
+          onClick={() => setShowWeekSummary(true)}
+          aria-label={`סה"כ ${dailyTotal} קלוריות מתוך יעד ${goal}. לצפייה בסיכום שבועי`}
+        >
+          <div className="ring">
+            <svg viewBox="0 0 128 128" aria-hidden="true">
+              <circle className="ring-track" cx="64" cy="64" r="58" strokeWidth="12" />
+              <circle
+                className="ring-value"
+                cx="64"
+                cy="64"
+                r="58"
+                strokeWidth="12"
+                strokeDasharray={ringCircumference}
+                strokeDashoffset={ringOffset}
+              />
+            </svg>
+            <div className="ring-center">
+              <b>{dailyTotal.toLocaleString("he-IL")}</b>
+              <span>{percentOfGoal}% מהיעד</span>
+            </div>
+          </div>
+          <div className="today-meta">
+            <span className="today-label">סה"כ קלוריות היום</span>
+            <strong className="big">
+              {dailyTotal.toLocaleString("he-IL")} <small>קק"ל</small>
+            </strong>
+            <small className="today-remaining">
+              {over
+                ? `עברת את היעד ב-${(dailyTotal - goal).toLocaleString("he-IL")} קק"ל`
+                : `נשארו ${remaining.toLocaleString("he-IL")} קק"ל`}
+            </small>
+            <span className="today-goal">יעד יומי {goal.toLocaleString("he-IL")}</span>
           </div>
         </button>
       </section>
@@ -1101,10 +1138,25 @@ export function CalorieApp() {
             />
           </div>
 
-          <div className="macro-row">
-            <span>חלבון {totals.protein}g</span>
-            <span>פחמימות {totals.carbs}g</span>
-            <span>שומן {totals.fat}g</span>
+          <div className="macro-row" aria-label="פירוט מקרו יומי">
+            {([
+              { key: "protein", label: "חלבון", value: totals.protein, target: macroTargets.protein },
+              { key: "carbs", label: "פחמימות", value: totals.carbs, target: macroTargets.carbs },
+              { key: "fat", label: "שומן", value: totals.fat, target: macroTargets.fat },
+            ] as const).map((macro) => (
+              <div className={`macro ${macro.key}`} key={macro.key}>
+                <div className="macro-top">
+                  <span>{macro.label}</span>
+                  <strong>
+                    {macro.value}
+                    <i> / {macro.target}g</i>
+                  </strong>
+                </div>
+                <div className="macro-track">
+                  <span style={{ width: `${Math.min(100, Math.round((macro.value / macro.target) * 100))}%` }} />
+                </div>
+              </div>
+            ))}
           </div>
 
           <div className="meal-list">
