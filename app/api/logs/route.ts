@@ -1,15 +1,34 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { readLogs, writeLogs } from "@/lib/logStorage";
+import { isUserId, type UserId } from "@/lib/users";
+import { cookieNameFor, verifySessionToken } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function GET() {
-  const logs = await readLogs();
+async function authorize(request: Request): Promise<UserId | null> {
+  const { searchParams } = new URL(request.url);
+  const user = searchParams.get("user");
+  if (!isUserId(user)) return null;
+
+  const store = await cookies();
+  const token = store.get(cookieNameFor(user))?.value;
+  return verifySessionToken(user, token) ? user : null;
+}
+
+export async function GET(request: Request) {
+  const user = await authorize(request);
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const logs = await readLogs(user);
   return NextResponse.json({ logs });
 }
 
 export async function PUT(request: Request) {
+  const user = await authorize(request);
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   let body: unknown;
 
   try {
@@ -24,6 +43,6 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Invalid logs payload" }, { status: 400 });
   }
 
-  await writeLogs(logs as Record<string, unknown>);
+  await writeLogs(user, logs as Record<string, unknown>);
   return NextResponse.json({ ok: true });
 }

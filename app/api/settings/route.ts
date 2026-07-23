@@ -1,16 +1,35 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { readSettings, writeSettings } from "@/lib/settingsStorage";
 import { sanitizeSettings } from "@/lib/settingsSchema";
+import { isUserId, type UserId } from "@/lib/users";
+import { cookieNameFor, verifySessionToken } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function GET() {
-  const settings = sanitizeSettings(await readSettings());
+async function authorize(request: Request): Promise<UserId | null> {
+  const { searchParams } = new URL(request.url);
+  const user = searchParams.get("user");
+  if (!isUserId(user)) return null;
+
+  const store = await cookies();
+  const token = store.get(cookieNameFor(user))?.value;
+  return verifySessionToken(user, token) ? user : null;
+}
+
+export async function GET(request: Request) {
+  const user = await authorize(request);
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const settings = sanitizeSettings(await readSettings(user));
   return NextResponse.json({ settings });
 }
 
 export async function PUT(request: Request) {
+  const user = await authorize(request);
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   let body: unknown;
 
   try {
@@ -26,6 +45,6 @@ export async function PUT(request: Request) {
   }
 
   const safeSettings = sanitizeSettings(settings);
-  await writeSettings(safeSettings);
+  await writeSettings(user, safeSettings);
   return NextResponse.json({ ok: true, settings: safeSettings });
 }

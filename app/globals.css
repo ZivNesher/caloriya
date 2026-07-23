@@ -864,6 +864,132 @@ input::placeholder { color: var(--faint); }
   .today-goal { justify-self: center; }
 }
 
+/* ---- page nav --------------------------------------------------------------- */
+.page-nav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: min(1200px, 100%);
+  margin: 0 auto;
+  padding: clamp(14px, 3vw, 32px) clamp(14px, 3vw, 32px) 0;
+}
+.page-nav-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--muted);
+  padding: 0 16px;
+  font-weight: 700;
+  font-size: 0.88rem;
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.page-nav-link:hover { border-color: var(--brand); color: var(--brand-ink); }
+.page-nav-link.active {
+  background: var(--brand-solid);
+  border-color: var(--brand-solid);
+  color: var(--on-brand);
+}
+
+/* ---- pin gate --------------------------------------------------------------- */
+.pin-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+.pin-card {
+  width: min(360px, 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--e2);
+  padding: 24px;
+  text-align: center;
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+}
+.pin-card h1 { margin: 0; font-size: 1.7rem; font-weight: 800; }
+.pin-input {
+  width: 100%;
+  min-height: 52px;
+  text-align: center;
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  margin-top: 8px;
+}
+.pin-error { margin: 0; color: var(--danger-ink); font-weight: 700; font-size: 0.9rem; }
+.pin-card .primary { width: 100%; margin-top: 4px; }
+.pin-loading { color: var(--muted); font-weight: 700; }
+
+/* ---- compete page ------------------------------------------------------------ */
+.score-card {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: linear-gradient(160deg, var(--brand-tint), transparent 62%), var(--surface);
+  box-shadow: var(--e2);
+  padding: 18px;
+  display: grid;
+  gap: 4px;
+  text-align: center;
+  align-content: center;
+}
+.score-row { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-weight: 700; font-size: 0.85rem; }
+.score-numbers { display: flex; justify-content: center; align-items: baseline; gap: 10px; font-size: 2.2rem; font-weight: 800; color: var(--brand-ink); }
+.score-note { margin: 4px 0 0; color: var(--muted); font-size: 0.85rem; font-weight: 700; }
+
+.compete-today {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.compete-card {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--e1);
+  padding: 16px;
+  display: grid;
+  gap: 8px;
+}
+.compete-card.over { border-color: var(--danger); }
+.compete-card.over .today-remaining { color: var(--danger-ink); font-weight: 700; }
+.compete-card .macro-track { --c: var(--brand); }
+.compete-card.over .macro-track { --c: var(--danger); }
+.compete-card .macro-track span { display: block; height: 100%; border-radius: var(--r-pill); background: var(--c); transition: width 0.5s ease; }
+
+.compete-week { display: grid; gap: 14px; }
+.compete-day {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+.compete-day.future { opacity: 0.5; }
+.compete-day-label { color: var(--muted); font-weight: 700; font-size: 0.85rem; }
+.compete-day-bars { display: grid; gap: 6px; }
+.compete-bar-row { display: grid; grid-template-columns: 54px minmax(0, 1fr) 68px; gap: 10px; align-items: center; }
+.compete-bar-row small { color: var(--muted); font-size: 0.85rem; }
+.compete-bar-row small.winner { color: var(--brand-ink); font-weight: 800; }
+.compete-bar-row small.winner::before { content: "🏆 "; }
+.compete-bar-row strong { text-align: left; font-weight: 700; font-size: 0.9rem; }
+.week-bars-track { height: 10px; border-radius: var(--r-pill); background: var(--surface-3); overflow: hidden; }
+.week-bars-track i { display: block; height: 100%; border-radius: var(--r-pill); background: var(--brand); }
+
+@media (max-width: 620px) {
+  .compete-today { grid-template-columns: 1fr; }
+  .compete-bar-row { grid-template-columns: 44px minmax(0, 1fr) 58px; }
+  .page-nav { padding: 12px 12px 0; }
+}
+
 .scanner-counter {
   position: absolute;
   top: 8px;
