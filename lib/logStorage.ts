@@ -6,6 +6,12 @@ export type StoredLogs = Record<string, unknown>;
 
 const fileNameFor = (user: UserId) => `calor-logs-${user}.json`;
 
+// The app used to keep a single shared log file before per-user storage was
+// introduced. Ziv was the sole user of that file, so his per-user reads fall
+// back to it and self-heal by merging anything missing back in.
+const legacyFileName = "calor-logs.json";
+const legacyOwner: UserId = "ziv";
+
 async function canUseDirectory(path: string) {
   try {
     await mkdir(path, { recursive: true });
@@ -27,9 +33,7 @@ export async function getDataFilePath(user: UserId) {
   return join(fallback, fileNameFor(user));
 }
 
-export async function readLogs(user: UserId): Promise<StoredLogs> {
-  const path = await getDataFilePath(user);
-
+async function readJsonFile(path: string): Promise<StoredLogs> {
   try {
     const raw = await readFile(path, "utf8");
     const parsed = JSON.parse(raw);
@@ -37,6 +41,23 @@ export async function readLogs(user: UserId): Promise<StoredLogs> {
   } catch {
     return {};
   }
+}
+
+export async function readLogs(user: UserId): Promise<StoredLogs> {
+  const path = await getDataFilePath(user);
+  const current = await readJsonFile(path);
+
+  if (user !== legacyOwner) return current;
+
+  const legacyPath = join(dirname(path), legacyFileName);
+  const legacy = await readJsonFile(legacyPath);
+  const missingFromCurrent = Object.keys(legacy).filter((dateKey) => !(dateKey in current));
+
+  if (missingFromCurrent.length === 0) return current;
+
+  const recovered: StoredLogs = { ...legacy, ...current };
+  await writeLogs(user, recovered);
+  return recovered;
 }
 
 export async function writeLogs(user: UserId, logs: StoredLogs) {
