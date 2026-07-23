@@ -1,9 +1,10 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import type { UserId } from "@/lib/users";
 
 export type StoredLogs = Record<string, unknown>;
 
-const fileName = "calor-logs.json";
+const fileNameFor = (user: UserId) => `calor-logs-${user}.json`;
 
 async function canUseDirectory(path: string) {
   try {
@@ -15,19 +16,19 @@ async function canUseDirectory(path: string) {
   }
 }
 
-export async function getDataFilePath() {
+export async function getDataFilePath(user: UserId) {
   const preferred = process.env.DATA_DIR || "/data";
   if (await canUseDirectory(preferred)) {
-    return join(preferred, fileName);
+    return join(preferred, fileNameFor(user));
   }
 
   const fallback = join(process.cwd(), ".data");
   await mkdir(fallback, { recursive: true });
-  return join(fallback, fileName);
+  return join(fallback, fileNameFor(user));
 }
 
-export async function readLogs(): Promise<StoredLogs> {
-  const path = await getDataFilePath();
+export async function readLogs(user: UserId): Promise<StoredLogs> {
+  const path = await getDataFilePath(user);
 
   try {
     const raw = await readFile(path, "utf8");
@@ -38,8 +39,8 @@ export async function readLogs(): Promise<StoredLogs> {
   }
 }
 
-export async function writeLogs(logs: StoredLogs) {
-  const path = await getDataFilePath();
+export async function writeLogs(user: UserId, logs: StoredLogs) {
+  const path = await getDataFilePath(user);
   await mkdir(dirname(path), { recursive: true });
 
   const tempPath = `${path}.${process.pid}.${Date.now()}.tmp`;

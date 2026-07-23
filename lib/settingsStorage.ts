@@ -1,9 +1,10 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import type { UserId } from "@/lib/users";
 
 export type StoredSettings = Record<string, unknown>;
 
-const fileName = "calor-settings.json";
+const fileNameFor = (user: UserId) => `calor-settings-${user}.json`;
 
 async function canUseDirectory(path: string) {
   try {
@@ -15,19 +16,19 @@ async function canUseDirectory(path: string) {
   }
 }
 
-export async function getSettingsFilePath() {
+export async function getSettingsFilePath(user: UserId) {
   const preferred = process.env.DATA_DIR || "/data";
   if (await canUseDirectory(preferred)) {
-    return join(preferred, fileName);
+    return join(preferred, fileNameFor(user));
   }
 
   const fallback = join(process.cwd(), ".data");
   await mkdir(fallback, { recursive: true });
-  return join(fallback, fileName);
+  return join(fallback, fileNameFor(user));
 }
 
-export async function readSettings(): Promise<StoredSettings> {
-  const path = await getSettingsFilePath();
+export async function readSettings(user: UserId): Promise<StoredSettings> {
+  const path = await getSettingsFilePath(user);
 
   try {
     const raw = await readFile(path, "utf8");
@@ -38,8 +39,8 @@ export async function readSettings(): Promise<StoredSettings> {
   }
 }
 
-export async function writeSettings(settings: StoredSettings) {
-  const path = await getSettingsFilePath();
+export async function writeSettings(user: UserId, settings: StoredSettings) {
+  const path = await getSettingsFilePath(user);
   await mkdir(dirname(path), { recursive: true });
 
   const tempPath = `${path}.${process.pid}.${Date.now()}.tmp`;

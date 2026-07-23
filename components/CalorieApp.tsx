@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { BarcodeFormat, BrowserMultiFormatOneDReader, type IScannerControls } from "@zxing/browser";
 import { ChecksumException, DecodeHintType, FormatException, NotFoundException } from "@zxing/library";
 import { products, type Product } from "@/data/products";
+import { PageNav } from "@/components/PageNav";
 import {
   defaultProfile,
   clampNumber,
@@ -13,30 +14,30 @@ import {
   type Profile,
   type Weights,
 } from "@/lib/settingsSchema";
-
-type MealKey = "breakfast" | "lunch" | "dinner" | "night" | "snacks";
-
-type Entry = {
-  id: string;
-  product: Product;
-  grams: number;
-  amountLabel?: string;
-  meal: MealKey;
-  createdAt: string;
-};
-
-type DayLog = Record<MealKey, Entry[]> & {
-  workoutCalories?: number;
-};
-type Logs = Record<string, DayLog>;
-
-const mealLabels: Record<MealKey, string> = {
-  breakfast: "בוקר",
-  lunch: "צהריים",
-  dinner: "ערב",
-  night: "לילה",
-  snacks: "נשנושים",
-};
+import type { UserId } from "@/lib/users";
+import {
+  addDays,
+  bmiLabel,
+  caloriesFor,
+  calculateBmi,
+  calculateDailyTarget,
+  emptyDay,
+  formatHebrewDate,
+  fromDateKey,
+  getCurrentWeight,
+  macroFor,
+  mealLabels,
+  mealOrder,
+  netCalories,
+  toDateKey,
+  totalCalories,
+  weekKeys,
+  workoutCalories,
+  type DayLog,
+  type Entry,
+  type Logs,
+  type MealKey,
+} from "@/lib/calorieMath";
 
 const mealHints: Record<MealKey, string> = {
   breakfast: "קפה, יוגורט, ביצים, לחם",
@@ -46,7 +47,6 @@ const mealHints: Record<MealKey, string> = {
   snacks: "חטיפים, פירות, מתוקים",
 };
 
-const mealOrder = Object.keys(mealLabels) as MealKey[];
 type UnitOption = {
   id: string;
   label: string;
@@ -129,49 +129,6 @@ const portionUnits: UnitOption[] = [
   { id: "portion", label: "מנה", gramsPerUnit: 250, defaultValue: 1, quickValues: [1, 2] },
   { id: "half", label: "חצי מנה", gramsPerUnit: 125, defaultValue: 1, quickValues: [1, 2] },
 ];
-
-const emptyDay = (): DayLog => ({
-  breakfast: [],
-  lunch: [],
-  dinner: [],
-  night: [],
-  snacks: [],
-  workoutCalories: 0,
-});
-
-const toDateKey = (date: Date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const fromDateKey = (key: string) => {
-  const [year, month, day] = key.split("-").map(Number);
-  return new Date(year, month - 1, day);
-};
-
-const addDays = (dateKey: string, amount: number) => {
-  const date = fromDateKey(dateKey);
-  date.setDate(date.getDate() + amount);
-  return toDateKey(date);
-};
-
-const formatHebrewDate = (dateKey: string) =>
-  new Intl.DateTimeFormat("he-IL", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(fromDateKey(dateKey));
-
-const caloriesFor = (entry: Entry) =>
-  Math.round((entry.product.caloriesPer100g * entry.grams) / 100);
-
-const macroFor = (entry: Entry, field: "protein" | "carbs" | "fat") => {
-  const value = entry.product[field];
-  return typeof value === "number" ? (value * entry.grams) / 100 : 0;
-};
 
 const finalLetterMap: Record<string, string> = {
   ך: "כ",
@@ -425,7 +382,7 @@ const formatAmountLabel = (value: number, unit: UnitOption, grams: number) => {
   return `${cleanValue} ${unit.label} (${Math.round(grams)} גרם)`;
 };
 
-function useStoredLogs() {
+function useStoredLogs(user: UserId) {
   const [logs, setLogs] = useState<Logs>({});
   const [loaded, setLoaded] = useState(false);
   const [storageStatus, setStorageStatus] = useState("טוען נתונים...");
@@ -437,7 +394,7 @@ function useStoredLogs() {
       let localLogs: Logs = {};
 
       try {
-        const raw = window.localStorage.getItem("calor-logs-v1");
+        const raw = window.localStorage.getItem(`calor-logs-v1-${user}`);
         if (raw) {
           localLogs = JSON.parse(raw) as Logs;
         }
@@ -446,7 +403,7 @@ function useStoredLogs() {
       }
 
       try {
-        const response = await fetch("/api/logs", { cache: "no-store" });
+        const response = await fetch(`/api/logs?user=${user}`, { cache: "no-store" });
         if (!response.ok) throw new Error("Failed to load logs");
         const payload = (await response.json()) as { logs?: Logs };
         const serverLogs = payload.logs ?? {};
@@ -457,7 +414,7 @@ function useStoredLogs() {
         setStorageStatus("נשמר בענן Railway");
 
         if (Object.keys(localLogs).length && Object.keys(serverLogs).length === 0) {
-          await fetch("/api/logs", {
+          await fetch(`/api/logs?user=${user}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ logs: mergedLogs }),
@@ -476,14 +433,14 @@ function useStoredLogs() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     if (!loaded) return;
 
     const timeout = window.setTimeout(() => {
-      window.localStorage.setItem("calor-logs-v1", JSON.stringify(logs));
-      void fetch("/api/logs", {
+      window.localStorage.setItem(`calor-logs-v1-${user}`, JSON.stringify(logs));
+      void fetch(`/api/logs?user=${user}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ logs }),
@@ -495,12 +452,12 @@ function useStoredLogs() {
     }, 350);
 
     return () => window.clearTimeout(timeout);
-  }, [loaded, logs]);
+  }, [loaded, logs, user]);
 
   return [logs, setLogs, storageStatus] as const;
 }
 
-function useStoredSettings() {
+function useStoredSettings(user: UserId) {
   const [profile, setProfile] = useState<Profile>(defaultProfile);
   const [weights, setWeights] = useState<Weights>({});
   const [loaded, setLoaded] = useState(false);
@@ -513,7 +470,7 @@ function useStoredSettings() {
       let localWeights: Weights = {};
 
       try {
-        const raw = window.localStorage.getItem("calor-settings-v1");
+        const raw = window.localStorage.getItem(`calor-settings-v1-${user}`);
         if (raw) {
           const parsed = JSON.parse(raw) as { profile?: Partial<Profile>; weights?: Weights };
           localProfile = sanitizeProfile(parsed.profile);
@@ -525,7 +482,7 @@ function useStoredSettings() {
       }
 
       try {
-        const response = await fetch("/api/settings", { cache: "no-store" });
+        const response = await fetch(`/api/settings?user=${user}`, { cache: "no-store" });
         if (!response.ok) throw new Error("Failed to load settings");
         const payload = (await response.json()) as {
           settings?: { profile?: Partial<Profile>; weights?: Weights };
@@ -543,7 +500,7 @@ function useStoredSettings() {
           !payload.settings?.profile &&
           !payload.settings?.weights
         ) {
-          await fetch("/api/settings", {
+          await fetch(`/api/settings?user=${user}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ settings: { profile: nextProfile, weights: nextWeights } }),
@@ -562,15 +519,15 @@ function useStoredSettings() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     if (!loaded) return;
 
     const timeout = window.setTimeout(() => {
       const settings = { profile: sanitizeProfile(profile), weights: sanitizeWeights(weights) };
-      window.localStorage.setItem("calor-settings-v1", JSON.stringify(settings));
-      void fetch("/api/settings", {
+      window.localStorage.setItem(`calor-settings-v1-${user}`, JSON.stringify(settings));
+      void fetch(`/api/settings?user=${user}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ settings }),
@@ -578,81 +535,14 @@ function useStoredSettings() {
     }, 350);
 
     return () => window.clearTimeout(timeout);
-  }, [loaded, profile, weights]);
+  }, [loaded, profile, weights, user]);
 
   return { profile, setProfile, weights, setWeights } as const;
 }
 
-function totalCalories(day: DayLog) {
-  return mealOrder.reduce(
-    (sum, meal) => sum + day[meal].reduce((mealSum, entry) => mealSum + caloriesFor(entry), 0),
-    0,
-  );
-}
-
-function workoutCalories(day: DayLog) {
-  return clampNumber(day.workoutCalories, 0, 0, 5000);
-}
-
-function netCalories(day: DayLog) {
-  return totalCalories(day) - workoutCalories(day);
-}
-
-function weekKeys(selectedDate: string) {
-  const base = fromDateKey(selectedDate);
-  const day = base.getDay();
-  base.setDate(base.getDate() - day);
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(base);
-    date.setDate(base.getDate() + index);
-    return toDateKey(date);
-  });
-}
-
-function getCurrentWeight(weights: Weights, selectedDate: string, fallback: number) {
-  if (Number.isFinite(weights[selectedDate]) && weights[selectedDate] > 0) return weights[selectedDate];
-
-  const latest = Object.entries(weights)
-    .filter(([, value]) => Number.isFinite(value) && value > 0)
-    .sort(([dateA], [dateB]) => dateB.localeCompare(dateA))[0];
-
-  return latest?.[1] ?? clampNumber(fallback, defaultProfile.targetWeightKg, 30, 300);
-}
-
-function calculateBmi(weightKg: number, heightCm: number) {
-  const safeWeight = clampNumber(weightKg, defaultProfile.targetWeightKg, 30, 300);
-  const safeHeight = clampNumber(heightCm, defaultProfile.heightCm, 80, 250);
-  if (!safeWeight || !safeHeight) return 0;
-  const heightM = safeHeight / 100;
-  return safeWeight / (heightM * heightM);
-}
-
-function calculateDailyTarget(profile: Profile, weightKg: number) {
-  const safeProfile = sanitizeProfile(profile);
-  const safeWeight = clampNumber(weightKg, safeProfile.targetWeightKg, 30, 300);
-  const base =
-    10 * safeWeight +
-    6.25 * safeProfile.heightCm -
-    5 * safeProfile.age +
-    (safeProfile.sex === "male" ? 5 : -161);
-  const maintenance = base * safeProfile.activity;
-  const deficit = (safeProfile.weeklyLossKg * 7700) / 7;
-  const floor = safeProfile.sex === "male" ? 1500 : 1200;
-
-  return Math.max(floor, Math.round(maintenance - deficit));
-}
-
-function bmiLabel(bmi: number) {
-  if (!bmi) return "חסר נתון";
-  if (bmi < 18.5) return "מתחת לנורמה";
-  if (bmi < 25) return "בטווח תקין";
-  if (bmi < 30) return "עודף משקל";
-  return "השמנה";
-}
-
-export function CalorieApp() {
-  const [logs, setLogs, storageStatus] = useStoredLogs();
-  const { profile, setProfile, weights, setWeights } = useStoredSettings();
+export function CalorieApp({ user, label }: { user: UserId; label: string }) {
+  const [logs, setLogs, storageStatus] = useStoredLogs(user);
+  const { profile, setProfile, weights, setWeights } = useStoredSettings(user);
   const [selectedDate, setSelectedDate] = useState(() => toDateKey(new Date()));
   const [query, setQuery] = useState("");
   const [selectedMeal, setSelectedMeal] = useState<MealKey>("breakfast");
@@ -1160,11 +1050,13 @@ export function CalorieApp() {
   }, [notice]);
 
   return (
+    <>
+      <PageNav current={user} />
     <main className="app-shell">
       {notice ? <div className="toast" role="status">{notice}</div> : null}
       <section className="topbar" aria-label="סיכום יומי">
         <div>
-          <p className="eyebrow">קלורית</p>
+          <p className="eyebrow">קלורית · {label}</p>
           <h1>יומן קלוריות ישראלי</h1>
           <p className="subline">{formatHebrewDate(selectedDate)} · {entryCount} פריטים נרשמו</p>
           <div className="status-actions">
@@ -1739,5 +1631,6 @@ export function CalorieApp() {
         </div>
       </section>
     </main>
+    </>
   );
 }
